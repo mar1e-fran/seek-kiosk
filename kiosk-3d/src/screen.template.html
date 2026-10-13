@@ -1,0 +1,1127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SEEK Kiosk</title>
+<meta name="description" content="Interactive prototype of SEEK, an office wayfinding kiosk: explore the building, drop into a floor, and find what's happening today.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://use.typekit.net/myf3ict.css">
+<link href="https://fonts.googleapis.com/css2?family=Akatab:wght@400;600;700;900&display=swap" rel="stylesheet">
+<script>
+  /* ?embed=1 → transparent page so the host's background shows through; ?theme=dark|light → match the host */
+  (function () {
+    var q = new URLSearchParams(location.search), r = document.documentElement;
+    var t = q.get('theme'); if (t === 'dark' || t === 'light') r.setAttribute('data-theme', t);
+    if (q.get('embed') === '1') r.classList.add('embed');
+  })();
+</script>
+<style>
+html.embed, html.embed body { background: transparent; }
+/* ── Page tokens (the frame around the kiosk) ─────────────────────────── */
+:root {
+  --page: #e8ecf2;
+  --page-glow: #f7f9fc;
+  --ink: #0f172a;
+  --muted: #5b6474;
+  --chip: rgba(15, 23, 42, .06);
+  --bezel: #0d1117;
+  --bezel-edge: #232a36;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page: #0a0d13; --page-glow: #151a24; --ink: #e8edf6; --muted: #8b95a7;
+    --chip: rgba(255, 255, 255, .07); --bezel: #000; --bezel-edge: #2a3140;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --page: #0a0d13; --page-glow: #151a24; --ink: #e8edf6; --muted: #8b95a7;
+  --chip: rgba(255, 255, 255, .07); --bezel: #000; --bezel-edge: #2a3140;
+  color-scheme: dark;
+}
+
+/* ── Kiosk design tokens (from the Figma file) ────────────────────────── */
+.screen {
+  --primary1: #0f172a;
+  --primary3: #b3d0ff;
+  --primary4: #f1f5f9;
+  --tile: #dbe8fb;
+  --secondary2: #fe8a01;
+
+  /* motion */
+  --ease-out: cubic-bezier(.22, 1, .36, 1);
+  --ease-inout: cubic-bezier(.65, 0, .35, 1);
+  --ease-sheet: cubic-bezier(.32, .72, 0, 1);
+  --spring: cubic-bezier(.34, 1.56, .64, 1);
+  --t-build: 1100ms;
+  --t-morph: 950ms;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: radial-gradient(120% 80% at 50% 0%, var(--page-glow), var(--page) 70%);
+  background-color: var(--page);
+  color: var(--ink);
+  font-family: "Akatab", system-ui, sans-serif;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+button:focus-visible, [role="button"]:focus-visible { outline: 6px solid var(--secondary2, #fe8a01); outline-offset: 6px; }
+
+/* ── Embed shell ──────────────────────────────────────────────────────── */
+.shell {
+  height: 100%;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  justify-items: center;
+  align-items: center;
+  padding: 16px 16px 12px;
+  gap: 12px;
+}
+.fit { position: relative; width: 100%; height: 100%; display: grid; place-items: center; min-height: 0; }
+.device-slot { position: relative; }
+.device {
+  position: absolute; left: 0; top: 0;
+  width: 2260px; height: 3696px;
+  padding: 80px;
+  border-radius: 120px;
+  background: linear-gradient(160deg, var(--bezel-edge), var(--bezel) 30%);
+  box-shadow:
+    0 0 0 6px var(--bezel-edge) inset,
+    0 120px 240px -60px rgba(15, 23, 42, .45),
+    0 40px 80px -40px rgba(15, 23, 42, .35);
+  transform-origin: 0 0;
+}
+.device::after { /* glass sheen */
+  content: ""; position: absolute; inset: 80px; border-radius: 48px; pointer-events: none;
+  background: linear-gradient(115deg, rgba(255,255,255,.07), rgba(255,255,255,0) 38%);
+}
+
+.caption {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center;
+  font-size: 14px; line-height: 1.3; color: var(--muted);
+  min-height: 32px;
+}
+.caption .brand { font-weight: 900; letter-spacing: .08em; color: var(--ink); }
+.caption .hint {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 12px; border-radius: 999px; background: var(--chip); color: var(--ink);
+  transition: opacity .25s ease;
+}
+.caption .hint::before {
+  content: ""; width: 7px; height: 7px; border-radius: 50%; background: #fe8a01;
+  box-shadow: 0 0 0 0 rgba(254, 138, 1, .5); animation: ping 1.8s ease-out infinite;
+}
+.caption .hint.swap { opacity: 0; }
+.caption .restart {
+  padding: 6px 12px; border-radius: 999px; color: var(--muted); font-size: 14px;
+  transition: background .2s ease, color .2s ease;
+}
+.caption .restart:hover { background: var(--chip); color: var(--ink); }
+.caption .restart:focus-visible { outline: 2px solid #fe8a01; outline-offset: 2px; }
+/* Embedded on mariecabibihan.com: match the portfolio's quiet, typographic captions */
+html.embed .caption { font-family: "neue-haas-grotesk-text", "Helvetica Neue", system-ui, sans-serif; font-size: 14px; letter-spacing: 0; gap: 16px; -webkit-font-smoothing: antialiased; }
+html.embed .caption .brand { display: none; }
+html.embed .caption .hint { padding: 0; background: none; color: var(--muted); border-radius: 0; }
+html.embed .caption .hint::before { display: none; }
+html.embed .caption .restart { padding: 0; border-radius: 0; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+html.embed .caption .restart:hover { background: none; text-decoration-color: transparent; }
+html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; outline-offset: 4px; }
+@keyframes ping { 0% { box-shadow: 0 0 0 0 rgba(254,138,1,.55); } 80%, 100% { box-shadow: 0 0 0 8px rgba(254,138,1,0); } }
+
+/* ── The kiosk screen: 2100 × 3536 design units ───────────────────────── */
+.screen {
+  position: relative;
+  width: 2100px; height: 3536px;
+  border-radius: 48px;
+  overflow: hidden;
+  background: var(--primary4);
+  isolation: isolate;
+  user-select: none;
+  font-family: "Akatab", system-ui, sans-serif;
+  color: #000;
+}
+.screen.instant, .screen.instant * { transition: none !important; }
+
+.abs { position: absolute; }
+.lh { line-height: 1.32; }
+
+/* Logo */
+.logo {
+  position: absolute; left: 1681px; top: 101px; width: 264px; height: 264px; z-index: 12;
+  border-radius: 50%;
+  transition: transform .7s var(--ease-out);
+}
+.logo img { width: 264px; height: 264px; display: block; transition: transform .6s var(--spring); }
+.logo:active img { transform: scale(.92) rotate(-12deg); }
+.screen[data-view="plan"] .logo { transform: translateY(20px); }
+.screen[data-view="idle"] .logo img { animation: logo-spin 14s linear infinite; }
+@keyframes logo-spin { to { transform: rotate(360deg); } }
+
+/* ── Building stage (Figma "Frame 37": 1682 × 2373 at 209, 496) ───────── */
+.stage {
+  position: absolute; left: 209px; top: 496px; width: 1682px; height: 2373px;
+  /* clip only what leaves through the top edge, like the Figma frame */
+  clip-path: inset(0 -2000px -2000px -2000px);
+  transition: transform .8s var(--ease-sheet), filter .6s ease;
+  z-index: 2;
+}
+.float { position: absolute; inset: 0; }
+.screen[data-view="idle"] .float { animation: float 7s ease-in-out infinite; }
+@keyframes float { 50% { transform: translateY(-18px); } }
+
+.layer { position: absolute; inset: 0; pointer-events: none; }
+.level, .roof, .glass, .furn, .mini-pins {
+  transition:
+    transform var(--t-build) var(--ease-inout),
+    opacity calc(var(--t-build) * .6) ease,
+    translate .9s cubic-bezier(.34, 1.45, .64, 1);
+}
+/* affordance: in idle the floors periodically ease apart (a preview of the
+   explode), and do so on hover/press, so the building itself reads as touchable */
+.screen[data-view="idle"]:is(.peek, .peek-hold) .L3 { translate: 0 -54px; }
+.screen[data-view="idle"]:is(.peek, .peek-hold) .L1 { translate: 0 54px; }
+.screen[data-view="idle"]:is(.peek, .peek-hold) .roof { translate: 0 -120px; }
+.screen[data-view="idle"]:is(.peek, .peek-hold) .glass { translate: calc(var(--dx) * .07) calc(var(--dy) * .07); opacity: .55; }
+.float { scale: 1; transition: scale .25s var(--ease-out); }
+.screen[data-view="idle"].press .float { scale: .975; }
+
+/* iso slab: wrapper box from Figma, inner element carries the isometric transform */
+.slab-box { position: absolute; left: 23px; width: 1584.191px; height: 1060.436px; display: flex; align-items: center; justify-content: center; }
+.slab {
+  position: relative; flex: none; width: 863.241px; height: 1043.116px;
+  transform: rotate(-33.69deg) skewX(22.42deg) scale(1, .92);
+  transition: transform var(--t-morph) var(--ease-inout);
+  pointer-events: none;
+}
+.slab img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.slab .tint { opacity: 0; transition: opacity calc(var(--t-morph) * .7) ease calc(var(--t-morph) * .3); }
+.slab-hit { position: absolute; inset: 0; border-radius: 6px; cursor: pointer; }
+
+.L3 .slab-box { top: 29.35px; }
+.L2 .slab-box { top: 655.78px; }
+.L1 .slab-box { top: 1282.22px; }
+.roof .slab-box { left: 23.66px; top: -1075.93px; }
+
+/* glass walls (idle positions; explode pushes them out) */
+.gw { position: absolute; display: flex; align-items: center; justify-content: center; }
+.gw > div { flex: none; position: relative; }
+.gw .pane { background: rgba(199, 199, 199, .12); border: 1px solid #000; }
+.gw img { position: absolute; display: block; max-width: none; }
+.tL { transform: rotate(-33.69deg) skewX(-33.69deg) scale(1, .83); }
+.tR { transform: rotate(33.69deg) skewX(33.69deg) scale(1, -.83); }
+
+/* mini pins (exploded view) */
+.mini-pin {
+  position: absolute; width: 179px; height: 185px; pointer-events: none;
+  transform-origin: 90px 185px;
+  transition: transform .55s var(--spring), opacity .3s ease;
+}
+.mini-pin img { position: absolute; left: 25.2px; top: 0; width: 130px; height: 185px; filter: drop-shadow(0 6px 10px rgba(15,23,42,.18)); }
+.mini-pin span { position: absolute; left: 90.2px; top: 65px; width: 1em; height: 1em; transform: translate(-50%, -50%); display: flex; align-items: center; justify-content: center; font-size: 64px; line-height: 1; }
+
+/* ── View: idle (stacked building) ── */
+.screen[data-view="idle"] .L3 { transform: translate(25.57px, 462.46px); }
+.screen[data-view="idle"] .L2 { transform: translate(25.57px, 1.46px); }
+.screen[data-view="idle"] .L1 { transform: translate(25.57px, -459.54px); }
+.screen[data-view="idle"] .roof { transform: translate(25.58px, 1460.82px); }
+.screen[data-view="idle"] .L3 .furn { transform: translate(-5.57px, 2.92px); }
+.screen[data-view="idle"] .L2 .furn,
+.screen[data-view="idle"] .L1 .furn { opacity: 0; }
+.screen[data-view="idle"] .mini-pin { opacity: 0; transform: scale(.4); transition-delay: 0s !important; }
+
+/* choreography: walls leave before the floors split; floors close before walls return */
+.screen[data-from="idle"][data-view="explore"] .level { transition-delay: 140ms; }
+.screen[data-from="idle"][data-view="explore"] .roof { transition-delay: 60ms; }
+.screen[data-view="idle"] .glass { transition-delay: 380ms; }
+.screen[data-view="idle"] .roof { transition-delay: 200ms; }
+
+/* ── View: explore (exploded floors) ── */
+.screen:not([data-view="idle"]) .roof { opacity: 0; }
+.screen:not([data-view="idle"]) .glass { opacity: 0; transform: translate(var(--dx), var(--dy)); }
+.screen[data-view="explore"] .slab-hit,
+.screen[data-view="explore"] .mini-pin { pointer-events: auto; cursor: pointer; }
+.screen[data-view="explore"] .level.hot { transform: translateY(-22px); transition-duration: .45s; transition-delay: 0ms; transition-timing-function: var(--ease-out); }
+.screen[data-view="explore"] .level.hot .slab { filter: brightness(1.06) drop-shadow(0 30px 40px rgba(15, 23, 42, .18)); }
+.screen[data-view="explore"] .mini-pin:hover { transform: translateY(-10px) scale(1.06); }
+.screen[data-view="explore"] .mini-pin:active { transform: scale(.9); transition-duration: .12s; }
+.screen[data-view="explore"] .mini-pin { transition-delay: var(--pd, 0ms); }
+
+.building-hit { position: absolute; left: 230px; top: 380px; width: 1260px; height: 1520px; cursor: pointer; display: none; }
+.screen[data-view="idle"] .building-hit { display: block; }
+
+/* ── View: plan (one floor flattened) ── */
+.screen[data-view="plan"] .level:not(.is-selected) { opacity: 0; }
+.screen[data-view="plan"] .level.is-above { transform: translateY(-420px); }
+.screen[data-view="plan"] .level.is-below { transform: translateY(420px); }
+.screen[data-view="plan"] .level .furn,
+.screen[data-view="plan"] .level .mini-pins { opacity: 0; transition-duration: .35s; }
+.screen[data-view="plan"] .level.is-selected .slab { transform: rotate(0deg) skewX(0deg) scale(1.718, 1.718); }
+.screen[data-view="plan"] .level.is-selected .tint { opacity: 1; }
+.screen[data-view="plan"] .L3.is-selected { transform: translate(25.8px, 627.43px); }
+.screen[data-view="plan"] .L2.is-selected { transform: translate(25.8px, 1.22px); }
+.screen[data-view="plan"] .L1.is-selected { transform: translate(25.8px, -625.44px); }
+
+/* floor rail (exploded view labels) */
+.rail { position: absolute; left: 145px; top: 815px; width: 102px; z-index: 5; display: flex; flex-direction: column; gap: 524px; }
+.rail button {
+  width: 102px; height: 102px; border-radius: 10px; background: #fff;
+  font-weight: 700; font-size: 62px; letter-spacing: -1.24px; line-height: 1.32;
+  display: grid; place-items: center;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, .06);
+  opacity: 0; transform: translateX(-40px);
+  transition: opacity .5s ease, transform .6s var(--ease-out), background .25s ease;
+  pointer-events: none;
+}
+.rail button.on { background: var(--secondary2); }
+.screen[data-view="explore"] .rail button { opacity: 1; transform: none; pointer-events: auto; transition-delay: calc(500ms + var(--i) * 70ms), calc(500ms + var(--i) * 70ms), 0ms; }
+
+/* ── Plan layer ── */
+.plan { position: absolute; left: 209px; top: 496px; width: 1682px; height: 2373px; overflow: clip; z-index: 3; pointer-events: none; }
+.plan > * { opacity: 0; transition: opacity .45s ease; }
+.screen[data-view="plan"] .plan { pointer-events: auto; }
+.screen[data-view="plan"] .plan > * { opacity: 1; transition-delay: calc(var(--t-morph) * .82); }
+.plan .plan-building { position: absolute; left: -537px; top: -1075.93px; width: 2836px; height: 3489.598px; display: block; max-width: none; }
+.plan .rooms { position: absolute; left: 145.66px; top: 319.74px; width: 1345.284px; height: 1712.905px; }
+.plan .rooms img { position: absolute; left: -25.5px; top: -25.5px; width: 1396.28px; height: 1763.9px; display: block; max-width: none; }
+.plan .content { position: absolute; inset: 0; transition: opacity .35s ease, transform .5s var(--ease-out); }
+.plan .content.leaving { opacity: 0; transform: translateY(var(--shift, 0)); }
+.plan-bg { position: absolute; inset: 0; }
+
+/* large pins */
+.pin {
+  position: absolute; width: 215px; height: 230px; cursor: pointer;
+  transform-origin: 108px 224px;
+  transition: transform .5s var(--spring), opacity .25s ease;
+}
+.pin img { position: absolute; left: 30.2px; top: 0; width: 156px; height: 224px; filter: drop-shadow(0 10px 16px rgba(15, 23, 42, .16)); }
+.pin span { position: absolute; left: 108.2px; top: 78px; width: 1em; height: 1em; transform: translate(-50%, -50%); display: flex; align-items: center; justify-content: center; font-size: 84px; line-height: 1; }
+.pin:hover { transform: translateY(-12px); }
+.pin:active { transform: scale(.92); transition-duration: .12s; }
+.pin.hidden { opacity: 0; transform: scale(.5); pointer-events: none; }
+.pin.enter { animation: drop .7s var(--spring) both; animation-delay: var(--pd, 0ms); }
+@keyframes drop { from { opacity: 0; transform: translateY(-160px) scale(.7); } 60% { opacity: 1; } to { opacity: 1; transform: none; } }
+
+/* event popover card (Figma "event / details_right" + "detail_left") */
+.card {
+  position: absolute; z-index: 10;
+  transform: scale(.2); opacity: 0;
+  transition: transform .55s var(--spring), opacity .2s ease;
+  pointer-events: none;
+}
+.card.open { transform: none; opacity: 1; pointer-events: auto; }
+.card.right { width: 1146px; height: 887px; transform-origin: 9.5px 82px; }
+.card.left { width: 684px; height: 887px; transform-origin: 153.5px 138.6px; }
+.card .bubble { position: absolute; display: block; max-width: none; }
+.card.right .bubble { left: -17.47px; top: 46.24px; width: 1189px; height: 726px; }
+.card.left .bubble { left: -986.5px; top: 111.57px; width: 1169px; height: 750.85px; }
+.card .body {
+  position: absolute; width: 958px; transform: translate(-50%, -50%);
+  display: flex; flex-direction: column; gap: 57px; align-items: flex-end;
+}
+.card.right .body { left: 587px; top: 401.5px; }
+.card.left .body { left: -402px; top: 491.5px; }
+.card .body { gap: 15px; }
+.card .x {
+  flex: none; width: 104px; height: 104px; border-radius: 50%; background: var(--primary4);
+  display: grid; place-items: center; transition: background .2s ease, transform .2s var(--ease-out);
+}
+.card .x svg { width: 44px; height: 44px; }
+.card .x:active { transform: scale(.9); background: var(--tile); }
+.card .faces { width: 100%; display: grid; }
+.card .faces > * { grid-area: 1 / 1; transition: opacity .3s ease, transform .45s var(--ease-out); }
+.card .info { display: flex; flex-direction: column; gap: 36px; padding-top: 8px; }
+.card .info .desc { margin-top: -14px; }
+.card .tile { height: 160px; }
+.host { display: flex; align-items: center; gap: 22px; }
+.host .av {
+  flex: none; width: 80px; height: 80px; border-radius: 50%; display: grid; place-items: center;
+  font-weight: 700; font-size: 32px; letter-spacing: -.5px; color: #fff;
+}
+.host .who { display: flex; flex-direction: column; line-height: 1.2; }
+.host .by { font-weight: 600; font-size: 26px; color: rgba(15, 23, 42, .55); }
+.host .name { font-weight: 700; font-size: 36px; letter-spacing: -.6px; color: var(--primary1); }
+.host .name span { font-weight: 400; color: rgba(15, 23, 42, .62); }
+.card .qr-face { display: flex; flex-direction: column; align-items: center; opacity: 0; transform: translateY(24px); pointer-events: none; }
+.card.show-qr .info { opacity: 0; transform: translateY(-24px); pointer-events: none; }
+.card.show-qr .qr-face { opacity: 1; transform: none; pointer-events: auto; transition-delay: .12s; }
+.qr { width: 336px; height: 336px; clip-path: inset(0 0 100% 0); transition: clip-path .7s var(--ease-inout) .2s; }
+.card.show-qr .qr { clip-path: inset(0 0 0 0); }
+.qr svg { width: 100%; height: 100%; display: block; }
+.scan {
+  margin-top: 36px; width: 535px; height: 59px; border-radius: 14.652px; background: var(--tile);
+  display: grid; place-items: center; font-size: 35px; letter-spacing: -.7px; line-height: 1.32; color: var(--primary1);
+}
+.card .title-row { width: 100%; display: flex; gap: 30px; align-items: center; font-size: 100px; }
+.card .title-row .em { font-weight: 700; letter-spacing: -2px; line-height: 1.32; }
+.card .title-row h3 { margin: 0; font-weight: 900; line-height: .87; text-transform: capitalize; flex: 1; min-width: 0; font-size: 100px; white-space: nowrap; }
+.card .desc { margin: 0; font-weight: 600; font-size: 30px; letter-spacing: -.6px; line-height: 1.32; }
+.card .tiles { width: 100%; display: flex; gap: 101px; }
+.tile {
+  background: var(--tile); border-radius: 14.652px; height: 177px; width: 428px;
+  padding: 11.988px 17.316px; display: flex; flex-direction: column; gap: 5px;
+  color: var(--primary1);
+}
+.tile + .tile { width: 427px; gap: 2px; }
+.tile .label { display: flex; align-items: center; gap: 7.992px; font-weight: 700; font-size: 33px; letter-spacing: -.66px; line-height: 1.32; }
+.tile .label img { width: 32px; height: 32px; display: block; }
+.tile .value { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 53px; letter-spacing: -1.06px; line-height: 1.32; white-space: nowrap; padding-right: 0; }
+.tile .value.lg { font-size: 65px; letter-spacing: -1.3px; }
+.join {
+  width: 958px; height: 105px; border-radius: 14.652px; background: var(--primary3);
+  font-size: 55px; letter-spacing: -1.1px; line-height: 1.32; color: var(--primary1);
+  display: grid; place-items: center;
+  transition: background .3s ease, transform .2s var(--ease-out);
+}
+.join:hover { background: #a4c6ff; }
+.join:active { transform: scale(.985); }
+
+
+/* plan chrome */
+.chip-floor {
+  position: absolute; left: 107px; top: 114px; width: 567px; height: 264px; z-index: 6;
+  background: var(--primary3); border-radius: 10px; display: grid; place-items: center;
+  font-weight: 700; font-size: 200px; letter-spacing: -4px; line-height: 1.32;
+}
+.stack { position: absolute; left: 107px; top: 431px; width: 264px; height: 264px; z-index: 6; isolation: isolate; }
+.stack .sq {
+  position: absolute; inset: 0; border-radius: 10px; background: var(--primary3);
+  display: grid; place-items: center; font-weight: 700; font-size: 200px; letter-spacing: -4px; line-height: 1.32;
+  transition: transform .6s var(--ease-out), background .3s ease, box-shadow .3s ease;
+}
+.stack .sq.top { background: var(--secondary2); z-index: 3; }
+.stack:hover .sq:not(.top):nth-child(n) { box-shadow: 0 10px 30px rgba(15,23,42,.08); }
+.stack:hover .sq.d1 { transform: translate(22px, 22px); }
+.stack:hover .sq.d2 { transform: translate(44px, 44px); }
+.stack .sq.d1 { z-index: 2; }
+.stack .sq.d2 { z-index: 1; }
+.pager {
+  position: absolute; left: 50%; top: 2850px; width: 1350px; padding: 10px; z-index: 6;
+  transform: translateX(-50%);
+  display: flex; gap: 47px; align-items: center; justify-content: center;
+}
+.pager button {
+  width: 133px; height: 133px; background: var(--primary3);
+  font-weight: 700; font-size: 100px; letter-spacing: -2px; line-height: 1.32;
+  display: grid; place-items: center; padding-top: 6px;
+  transition: background .3s ease, transform .3s var(--spring);
+}
+.pager button:hover { transform: translateY(-6px); }
+.pager button.on { background: var(--secondary2); }
+
+.plan-ui { opacity: 0; pointer-events: none; transition: opacity .4s ease, transform .6s var(--ease-out); }
+.chip-floor.plan-ui, .stack.plan-ui { transform: translateX(-60px); }
+.pager.plan-ui { transform: translate(-50%, 60px); }
+.screen[data-view="plan"] .plan-ui { opacity: 1; pointer-events: auto; transform: none; transition-delay: calc(var(--t-morph) * .7); }
+.screen[data-view="plan"] .pager.plan-ui { transform: translateX(-50%); }
+
+/* ── On-screen guidance (a kiosk has no caption bar) ── */
+.heading {
+  position: absolute; left: 107px; top: 114px; height: 264px; padding: 0 64px; z-index: 6;
+  background: var(--primary3); border-radius: 10px; display: flex; align-items: center;
+  font-weight: 700; font-size: 150px; letter-spacing: -3px; line-height: 1.32;
+  opacity: 0; transform: translateX(-60px); pointer-events: none;
+  transition: opacity .4s ease, transform .6s var(--ease-out);
+}
+.screen[data-view="explore"] .heading { opacity: 1; transform: none; transition-delay: .55s; }
+
+/* pager lead tile: back to the 3D building */
+.pager .to3d { background: var(--primary1); }
+.pager .to3d svg { width: 76px; height: 76px; }
+.pager .sep { width: 4px; height: 96px; border-radius: 2px; background: rgba(15, 23, 42, .14); margin: 0 -10px; }
+.pager button:active, .rail button:active { transform: scale(.94); transition-duration: .12s; }
+
+/* inactivity: the SEEK mark is the countdown, one dot per beat */
+.still {
+  position: absolute; inset: 0; z-index: 40; display: grid; place-items: center;
+  background: rgba(15, 23, 42, .28);
+  backdrop-filter: blur(6.05px); -webkit-backdrop-filter: blur(6.05px);
+  opacity: 0; pointer-events: none; transition: opacity .45s ease;
+}
+.still.show { opacity: 1; pointer-events: auto; }
+.still-card {
+  width: 1500px; padding: 120px 120px 100px; border-radius: 15px; background: var(--primary4);
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  box-shadow: 0 60px 140px -40px rgba(15, 23, 42, .45);
+  transform: translateY(80px) scale(.96); transition: transform .7s var(--spring);
+}
+.still.show .still-card { transform: none; }
+.still-mark { width: 340px; height: 340px; overflow: visible; }
+.still-mark .piece { transition: opacity .6s ease; }
+.still-mark .piece.gone { opacity: .12; }
+.still-mark circle.core { r: 27.08px; }
+.still-mark circle.core { animation: core 1s ease-in-out infinite; }
+@keyframes core { 50% { r: 33px; } }
+.still h3 { margin: 90px 0 0; font-weight: 900; font-size: 150px; letter-spacing: -3px; line-height: 1.05; color: #000; }
+.still p { margin: 36px 0 0; font-size: 58px; letter-spacing: -1.1px; line-height: 1.32; color: rgba(15, 23, 42, .62); }
+.still p b { color: var(--primary1); font-weight: 700; font-variant-numeric: tabular-nums; }
+.still .stay {
+  margin-top: 90px; width: 1100px; height: 150px; border-radius: 14.652px; background: var(--primary3);
+  font-size: 64px; letter-spacing: -1.2px; line-height: 1.32; color: var(--primary1);
+  display: grid; place-items: center; transition: transform .2s var(--ease-out);
+}
+.still .stay:active { transform: scale(.985); }
+.still .over {
+  margin-top: 46px; font-size: 52px; color: var(--primary1);
+  text-decoration: underline; text-decoration-thickness: 3px; text-underline-offset: 14px;
+}
+
+/* ── Events of the Day: sheet + scrim ─────────────────────────────────── */
+.scrim {
+  position: absolute; inset: 0; z-index: 20;
+  background: rgba(0, 0, 0, .2);
+  backdrop-filter: blur(6.05px); -webkit-backdrop-filter: blur(6.05px);
+  opacity: 0; pointer-events: none;
+  transition: opacity .6s ease;
+}
+.screen.sheet-open .scrim { opacity: 1; pointer-events: auto; cursor: pointer; }
+
+.sheet {
+  position: absolute; left: 0; top: 3208px; width: 2100px; height: 3088px; z-index: 21;
+  transform: translateY(var(--drag, 0px));
+  transition: transform .8s var(--ease-sheet);
+  touch-action: none;
+}
+.sheet.dragging { transition: none; }
+.screen.sheet-open .sheet { transform: translateY(calc(-2760px + var(--drag, 0px))); }
+.sheet .bg {
+  position: absolute; inset: 0; background: var(--primary3);
+  border-radius: 136px 136px 0 0;
+  box-shadow: 0 -20px 60px rgba(15, 23, 42, .06);
+  transition: opacity .55s ease;
+}
+.sheet .peek { position: absolute; left: 0; top: 0; width: 100%; height: 330px; cursor: pointer; }
+.sheet .handle {
+  position: absolute; left: 884px; top: 45px; width: 327px; height: 24px; border-radius: 34px;
+  background: var(--primary4); transition: opacity .3s ease, transform .3s ease;
+}
+.sheet .peek:hover .handle { transform: translateY(-6px); }
+.sheet h2 {
+  position: absolute; left: 196px; top: 118px; margin: 0;
+  font-weight: 900; font-size: 120px; letter-spacing: -2.4px; line-height: 1.32; color: #fff; white-space: nowrap;
+  transform-origin: 0 0;
+  transition: transform .8s var(--ease-sheet);
+}
+.sheet-close {
+  position: absolute; left: 1754px; top: 122px; width: 150px; height: 150px; border-radius: 15px;
+  background: var(--primary4); display: grid; place-items: center;
+  opacity: 0; transform: translateY(30px); pointer-events: none;
+  transition: opacity .3s ease, transform .5s var(--ease-out), background .2s ease;
+}
+.sheet-close svg { width: 70px; height: 70px; }
+.screen.sheet-open .sheet-close { opacity: 1; transform: none; pointer-events: auto; transition-delay: .3s; }
+.sheet-close:active { background: var(--tile); transform: scale(.94); transition-delay: 0s; }
+.grid {
+  position: absolute; left: 196px; top: 433px; width: 1709px;
+  display: grid; grid-template-columns: 695px 695px; justify-content: space-between; row-gap: 103px;
+}
+.ev {
+  position: relative; width: 695px; height: 788px; text-align: left; cursor: pointer;
+  transition: transform .45s var(--ease-out);
+}
+.screen.sheet-open .ev { animation: rise .8s var(--ease-sheet) both; animation-delay: calc(80ms + var(--i) * 45ms); }
+@keyframes rise { from { transform: translateY(120px); } }
+.ev .face {
+  position: absolute; left: 0; top: 0; width: 694px; height: 788px;
+  background: var(--primary4); border-radius: 15px; padding: 27px 38px;
+  display: flex; flex-direction: column; gap: 42px; align-items: flex-start; padding-bottom: 22px;
+  transition: box-shadow .35s ease, transform .35s var(--ease-out);
+}
+.ev:hover .face { box-shadow: 0 30px 60px -20px rgba(15, 23, 42, .25); transform: translateY(-10px); }
+.ev:active .face { transform: translateY(-4px) scale(.99); }
+.ev h4 { margin: 0; width: 505px; font-weight: 900; font-size: 80px; letter-spacing: -1.6px; line-height: 1.32; color: #000; }
+.ev .tiles { width: 100%; height: 392px; display: flex; flex-direction: column; gap: 38px; align-items: center; justify-content: center; }
+.ev .t {
+  width: 580px; height: 177px; border-radius: 14.652px; background: var(--tile);
+  display: grid; place-items: center; color: var(--primary1); line-height: 1.32;
+}
+.ev .t.time { font-size: 70px; letter-spacing: -1.4px; }
+.ev .t.place { font-size: 65px; letter-spacing: -1.3px; }
+.ev .where {
+  margin-top: auto; align-self: stretch; display: flex; align-items: center; justify-content: space-between;
+  font-weight: 700; font-size: 36px; letter-spacing: -.5px; line-height: 1.32; color: rgba(15, 23, 42, .62);
+}
+.ev .where b { color: var(--primary1); font-weight: 700; }
+.ev .em {
+  position: absolute; left: 643px; top: 40.5px; transform: translate(-50%, -50%);
+  font-weight: 900; font-size: 204px; letter-spacing: -4.08px; line-height: 1.32; white-space: nowrap;
+  transition: transform .5s var(--spring);
+}
+.ev:hover .em { transform: translate(-50%, -58%) rotate(-8deg); }
+
+/* bare mode (?bare): just the screen, used by the 3D kiosk */
+html.bare body { background: #000; }
+html.bare .shell { padding: 0; gap: 0; grid-template-rows: 1fr; }
+html.bare .caption { display: none; }
+html.bare .device { width: 2100px; height: 3536px; padding: 0; border-radius: 0; background: none; box-shadow: none; }
+html.bare .device::after { display: none; }
+html.bare .screen { border-radius: 0; }
+
+/* reduced motion: keep state changes, drop travel */
+.screen { touch-action: manipulation; -webkit-touch-callout: none; }
+@media (hover: none) {
+  .pin:hover, .pager button:hover, .sheet .peek:hover .handle, .stack:hover .sq { transform: none; }
+  .ev:hover .face { transform: none; box-shadow: none; }
+  .ev:hover .em { transform: translate(-50%, -50%); }
+  .screen[data-view="explore"] .mini-pin:hover { transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .screen { --t-build: 1ms; --t-morph: 1ms; }
+  .screen *, .screen *::before { animation: none !important; transition-duration: 1ms !important; transition-delay: 0ms !important; }
+  .caption .hint::before { animation: none; }
+}
+</style>
+</head>
+<body>
+<script>if (/[?&]bare\b/.test(location.search)) document.documentElement.classList.add('bare');</script>
+<div class="shell">
+  <div class="fit" id="fit">
+    <div class="device-slot" id="slot">
+      <div class="device" id="device">
+        <div class="screen" id="screen" data-view="idle" data-floor="3" role="application" aria-label="SEEK kiosk prototype">
+
+          <!-- Building -->
+          <div class="stage" aria-hidden="false">
+            <div class="float">
+              <!-- back glass walls -->
+              <div class="layer glass" style="--dx:935.83px;--dy:-479.82px">
+                <div class="gw" style="left:767.17px;top:384.89px;width:397.897px;height:705.009px"><div class="tR" style="width:478.212px;height:439.745px"><img src="assets/glass09.svg" alt="" style="inset:-0.11% -0.1%;width:100.2%;height:100.22%"></div></div>
+              </div>
+              <div class="layer glass" style="--dx:-772.17px;--dy:-503.15px">
+                <div class="gw" style="left:235.17px;top:385.22px;width:532px;height:791.268px"><div class="tL pane" style="width:639.384px;height:436.601px"></div></div>
+              </div>
+              <div class="layer glass" style="--dx:655.63px;--dy:-351.92px">
+                <div class="gw" style="left:1045.37px;top:728.99px;width:466.796px;height:754.675px"><div class="tR" style="width:561.018px;height:443.478px"><img src="assets/glass07.svg" alt="" style="left:0;top:-0.11%;width:100%;height:100.22%"></div></div>
+              </div>
+
+              <!-- Floor 1 (bottom) -->
+              <div class="layer level L1" data-level="1">
+                <div class="slab-box"><div class="slab"><img src="assets/floor3.svg" alt=""><img class="tint" src="assets/floor1.svg" alt=""><div class="slab-hit" role="button" tabindex="-1" aria-label="Floor 1"></div></div></div>
+                <div class="layer furn">{{F1}}</div>
+                <div class="layer mini-pins"></div>
+              </div>
+              <!-- Floor 2 -->
+              <div class="layer level L2" data-level="2">
+                <div class="slab-box"><div class="slab"><img src="assets/floor2.svg" alt=""><img class="tint" src="assets/floor1.svg" alt=""><div class="slab-hit" role="button" tabindex="-1" aria-label="Floor 2"></div></div></div>
+                <div class="layer furn">{{F2}}</div>
+                <div class="layer mini-pins"></div>
+              </div>
+              <!-- Floor 3 (top) -->
+              <div class="layer level L3" data-level="3">
+                <div class="slab-box"><div class="slab"><img src="assets/floor1.svg" alt=""><img class="tint" src="assets/floor1.svg" alt=""><div class="slab-hit" role="button" tabindex="-1" aria-label="Floor 3"></div></div></div>
+                <div class="layer furn">{{F3}}</div>
+                <div class="layer mini-pins"></div>
+              </div>
+              <!-- Roof -->
+              <div class="layer roof">
+                <div class="slab-box"><div class="slab"><img src="assets/roof.svg" alt=""></div></div>
+              </div>
+
+              <!-- front glass walls -->
+              <div class="layer glass" style="--dx:-745.57px;--dy:430.18px">
+                <div class="gw" style="left:235.17px;top:739.79px;width:493.744px;height:765.848px"><div class="tR" style="width:593.407px;height:436.686px"><img src="assets/glass06.svg" alt="" style="left:0;top:-0.11%;width:100%;height:100.22%"></div></div>
+              </div>
+              <div class="layer glass" style="--dx:645.1px;--dy:333.35px">
+                <div class="gw" style="left:1044.9px;top:651.72px;width:119.266px;height:187.907px"><div class="tL" style="width:143.34px;height:108.396px"><img src="assets/glass05.svg" alt="" style="left:-0.35%;top:-0.46%;width:100.7%;height:100.92%"></div></div>
+              </div>
+              <div class="layer glass" style="--dx:786.83px;--dy:531.47px">
+                <div class="gw" style="left:915.17px;top:1047.6px;width:597px;height:834.601px"><div class="tL pane" style="width:717.505px;height:436.601px"></div></div>
+              </div>
+              <div class="layer glass" style="--dx:-758.17px;--dy:-452.86px">
+                <div class="gw" style="left:542.17px;top:1069.93px;width:186.105px;height:564.16px"><div class="tL pane" style="width:223.671px;height:440.09px"></div></div>
+              </div>
+              <div class="layer glass" style="--dx:-927.17px;--dy:490.58px">
+                <div class="gw" style="left:542.17px;top:1197.49px;width:373px;height:685.352px"><div class="tR pane" style="width:448.29px;height:436.686px"></div></div>
+              </div>
+              <div class="layer glass" style="--dx:0px;--dy:-260px">
+                <img class="abs" src="assets/glass01.svg" alt="" style="left:1044.42px;top:730.75px;width:120.794px;height:188.909px">
+                <img class="abs" src="assets/cover.svg" alt="" style="left:541.51px;top:1331.8px;width:295.793px;height:220.439px">
+              </div>
+
+              <div class="building-hit" role="button" tabindex="0" aria-label="Explore the building"></div>
+            </div>
+          </div>
+
+          <!-- Floor rail (exploded labels) -->
+          <div class="rail" aria-label="Floors">
+            <button data-go="3" style="--i:0">3</button>
+            <button data-go="2" style="--i:1">2</button>
+            <button data-go="1" style="--i:2">1</button>
+          </div>
+
+          <!-- Floor plan -->
+          <div class="plan" aria-hidden="true">
+            <div class="plan-bg">
+              <img class="plan-building" src="assets/plan-building.svg" alt="">
+            </div>
+            <div class="content" id="planContent">
+              <div class="rooms"><img src="assets/plan-rooms.svg" alt=""></div>
+              <div id="pins"></div>
+            </div>
+          </div>
+
+          <div class="heading" aria-hidden="true">Choose a floor</div>
+          <div class="chip-floor plan-ui" aria-hidden="true">Floor</div>
+          <button class="stack plan-ui" id="stack" aria-label="Back to building">
+            <span class="sq" data-n="1">1</span><span class="sq" data-n="2">2</span><span class="sq" data-n="3">3</span>
+          </button>
+          <nav class="pager plan-ui" aria-label="Choose floor">
+            <button class="to3d" id="back" aria-label="All floors"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round"><path d="M12 3.5l8 4-8 4-8-4z"/><path d="M4 12l8 4 8-4"/><path d="M4 16.5l8 4 8-4"/></svg></button><span class="sep" aria-hidden="true"></span><button data-go="1">1</button><button data-go="2">2</button><button data-go="3">3</button>
+          </nav>
+
+          <button class="logo" id="logo" aria-label="SEEK home"><img src="assets/logo.svg" alt=""></button>
+
+          <!-- Events of the Day -->
+          <div class="scrim" id="scrim"></div>
+          <section class="sheet" id="sheet" aria-label="Events of the Day">
+            <div class="bg"></div>
+            <div class="peek" id="peek" role="button" tabindex="0" aria-label="Open Events of the Day"><div class="handle"></div></div>
+            <h2>Events of the Day</h2>
+            <button class="sheet-close" id="sheetClose" aria-label="Close Events of the Day"><svg viewBox="0 0 24 24" fill="none" stroke="#0f172a" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+            <div class="grid" id="grid"></div>
+          </section>
+
+          <div class="still" id="still" role="alertdialog" aria-labelledby="stillTitle">
+            <div class="still-card">
+              {{LOGO_SVG}}
+              <h3 id="stillTitle">Still seeking?</h3>
+              <p>Heading back to the start in <b id="stillN">10</b> seconds.</p>
+              <button class="stay" id="stillBtn">I’m still here</button>
+              <button class="over" id="stillOver">Start over now</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="caption">
+    <span class="brand">SEEK</span>
+    <span class="hint" id="hint">Tap the building to explore</span>
+    <button class="restart" id="restart">Restart</button>
+  </div>
+</div>
+
+<script>/*__QR__*/</script>
+<script>
+(() => {
+  const bare = document.documentElement.classList.contains('bare');
+  const W = bare ? 2100 : 2260, H = bare ? 3536 : 3696;
+  const screen = document.getElementById('screen');
+  const $ = (s, r = screen) => r.querySelector(s);
+  const $$ = (s, r = screen) => [...r.querySelectorAll(s)];
+
+  /* ── Data ─────────────────────────────────────────────────────────── */
+  const EVENTS = {
+    cookies:  { emoji: '😄', listEmoji: '🍪', title: 'Cooookiesss!', listTitle: 'Homemade Coooookies!', host: { name: 'Maya Okafor', role: 'Product Designer', color: '#fe8a01' }, desc: 'Grab some homemade cookies that can elevate your pitching skills', time: '9:30 AM', place: 'Room 307', floor: 3, plan: [922, 267], mini: [414.4, 23.85] },
+    hotdogs:  { emoji: '🌭', title: 'Hot Dogs', host: { name: 'Daniel Reyes', role: 'Office Manager', color: '#01a4f8' }, desc: 'Extra New York Hot dogs here. Come grab one if you missed the breakfast.', time: '8:30 AM', place: '3rd floor cafe', placeSize: 60, floor: 3, plan: [1325, 452], mini: [853, 46] },
+    rage:     { emoji: '😡', title: 'Rage baiting', host: { name: 'Sam Whitfield', role: 'Staff Engineer', color: '#0f172a' }, desc: 'Come try me!!', time: '7:30 PM', place: 'Room 305', floor: 3, plan: [1015, 1306], mini: [1140.19, 350.34] },
+    movie:    { emoji: '🎥', title: 'Movie Night!', host: { name: 'Priya Nair', role: 'Social Committee Lead', color: '#fe8a01' }, desc: 'Star Wars The Last Jedi Tonight! Don’t forget popcorn and drinks!', time: '10:30 PM', place: 'Room 302', floor: 3, plan: [209, 1541], mini: [675.06, 660] },
+    tea:      { emoji: '☕️', title: 'Tea time', host: { name: 'Hana Kim', role: 'People & Culture Partner', color: '#01a4f8' }, desc: 'Loose leaf, warm biscuits and ten quiet minutes before stand-up.', time: '7:30 AM', place: 'Room 205', floor: 2, plan: [1015, 1306] },
+    birthday: { emoji: '🥳', title: 'Jiwan’s Birthday', host: { name: 'Leo Martins', role: 'Frontend Engineer, Jiwan’s team', color: '#fe8a01' }, desc: 'Cake in the lounge. Sign the card on your way in!', time: '7:30 PM', place: '2nd floor lounge', placeSize: 53, floor: 2, plan: [209, 1541] },
+    kittens:  { emoji: '😹', title: 'Exploding Kittens', host: { name: 'Aisha Bello', role: 'QA Analyst', color: '#0f172a' }, desc: 'Card game showdown. Bring your best poker face and a defuse.', time: '3:30 PM', place: 'Room 214', floor: 2, plan: [540, 1090] },
+    mario:    { emoji: '🎮', title: 'Mario Kart Finale!', listTitle: 'Mario Kart 8 Grand Finale!', host: { name: 'Tom Chen', role: 'Head of Platform', color: '#01a4f8' }, desc: 'Final four on the big screen. Blue shells are fair game.', time: '8:30 PM', place: 'Room 134', floor: 1, plan: [1015, 1306] },
+  };
+  const TODAY = ['tea', 'hotdogs', 'cookies', 'kittens', 'birthday', 'mario'];
+
+  /* plan point → isometric point on a floor (same transform the slab uses) */
+  const LEVEL_CENTER = { 3: [815.1, 559.57], 2: [815.1, 1186], 1: [815.1, 1812.44] };
+  const PLAN_CENTER = [840.9, 1187], PLAN_SCALE = 1.718;
+  function toIso(level, x, y) {
+    let lx = (x - PLAN_CENTER[0]) / PLAN_SCALE, ly = (y - PLAN_CENTER[1]) / PLAN_SCALE;
+    ly *= 0.92;                                        // scaleY
+    lx += Math.tan(22.42 * Math.PI / 180) * ly;      // skewX
+    const a = -33.69 * Math.PI / 180;                  // rotate
+    const rx = lx * Math.cos(a) - ly * Math.sin(a), ry = lx * Math.sin(a) + ly * Math.cos(a);
+    return [rx + LEVEL_CENTER[level][0], ry + LEVEL_CENTER[level][1]];
+  }
+
+  /* ── State ────────────────────────────────────────────────────────── */
+  const state = { view: 'idle', floor: 3, event: null, sheet: false };
+
+  /* ── Render: mini pins on the exploded floors ─────────────────────── */
+  for (const level of [1, 2, 3]) {
+    const host = $(`.L${level} .mini-pins`);
+    Object.entries(EVENTS).filter(([, e]) => e.floor === level).forEach(([id, e], i) => {
+      let [x, y] = e.mini || (() => { const [tx, ty] = toIso(level, e.plan[0] + 108.2, e.plan[1] + 224); return [tx - 90.2, ty - 185]; })();
+      const el = document.createElement('div');
+      el.className = 'mini-pin';
+      el.style.cssText = `left:${x}px;top:${y}px;--pd:${650 + i * 70 + (3 - level) * 90}ms`;
+      el.innerHTML = `<img src="assets/pin-small.svg" alt=""><span>${e.emoji}</span>`;
+      el.setAttribute('role', 'button');
+      el.setAttribute('aria-label', e.title);
+      el.addEventListener('click', ev => { ev.stopPropagation(); openPlan(level, id); });
+      host.appendChild(el);
+    });
+  }
+
+  /* ── Render: Events of the Day grid ───────────────────────────────── */
+  const grid = $('#grid');
+  TODAY.forEach((id, i) => {
+    const e = EVENTS[id];
+    const b = document.createElement('button');
+    b.className = 'ev';
+    b.style.setProperty('--i', i);
+    b.innerHTML = `<div class="face"><h4>${e.listTitle || e.title}</h4><div class="tiles"><div class="t time">${e.time}</div><div class="t place">${e.place}</div></div><div class="where"><span>Floor <b>${e.floor}</b></span><span>Show on map →</span></div></div><div class="em" aria-hidden="true">${e.listEmoji || e.emoji}</div>`;
+    b.addEventListener('click', () => { closeSheet(); setTimeout(() => openPlan(e.floor, id), 380); });
+    grid.appendChild(b);
+  });
+  // keep tiles aligned across each row (Figma nudges single-line titles to match)
+  document.fonts.ready.then(() => {
+    const cards = $$('.ev h4', grid);
+    for (let r = 0; r < cards.length; r += 2) {
+      const pair = cards.slice(r, r + 2), h = Math.max(...pair.map(c => c.offsetHeight));
+      pair.forEach(c => c.style.minHeight = h + 'px');
+    }
+  });
+
+  /* ── Render: floor plan pins + popover card ───────────────────────── */
+  const pinsHost = $('#pins');
+  const BUBBLE = { left: 'assets/card-left.svg', right: 'assets/card-right.svg' };
+  function cardHTML(id) {
+    const e = EVENTS[id], side = e.plan[0] < 700 ? 'right' : 'left';
+    return `<div class="card ${side}" data-card="${id}" style="left:${e.plan[0]}px;top:${e.plan[1]}px">
+      <img class="bubble" src="${BUBBLE[side]}" alt="">
+      <div class="body">
+        <div class="title-row"><span class="em">${e.emoji}</span><h3>${e.title}</h3><button class="x" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="#0f172a" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+        <div class="faces">
+          <div class="info">
+            <div class="host"><span class="av" style="background:${e.host.color}">${e.host.name.split(' ').map(w => w[0]).join('')}</span><div class="who"><span class="by">Hosted by</span><span class="name">${e.host.name} <span>· ${e.host.role}</span></span></div></div>
+            <p class="desc">${e.desc}</p>
+            <div class="tiles">
+              <div class="tile"><div class="label"><img src="assets/icon-calendar.svg" alt="">Time</div><div class="value">Feb 22, ${e.time}</div></div>
+              <div class="tile"><div class="label"><img src="assets/icon-location.svg" alt="">Location</div><div class="value lg" style="${e.placeSize ? `font-size:${e.placeSize}px` : ''}">${e.place}</div></div>
+            </div>
+            <button class="join">Join</button>
+          </div>
+          <div class="qr-face">
+            <div class="qr" role="img" aria-label="QR code: add ${e.title} to your calendar"></div>
+            <div class="scan">Scan to add to your calendar</div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }
+  function renderPlan(floor) {
+    const ids = Object.keys(EVENTS).filter(id => EVENTS[id].floor === floor);
+    pinsHost.innerHTML = ids.map((id, i) => {
+      const e = EVENTS[id];
+      return `<div class="pin enter" data-pin="${id}" role="button" tabindex="0" aria-label="${e.title}" style="left:${e.plan[0]}px;top:${e.plan[1]}px;--pd:${i * 80}ms"><img src="assets/pin-large.svg" alt=""><span>${e.emoji}</span></div>`;
+    }).join('') + ids.map(cardHTML).join('');
+    // one-line titles: step the size down until it fits the bubble
+    $$('.card h3', pinsHost).forEach(h => {
+      let size = 100;
+      while (h.scrollWidth > h.clientWidth && size > 60) h.style.fontSize = (size -= 4) + 'px';
+    });
+  }
+  pinsHost.addEventListener('click', ev => {
+    const card = ev.target.closest('.card');
+    if (ev.target.closest('.x')) { ev.stopPropagation(); showCard(null); return; }
+    if (ev.target.closest('.join')) { ev.stopPropagation(); showQR(card); return; }
+    if (ev.target.closest('.card')) { ev.stopPropagation(); return; }
+    const pin = ev.target.closest('.pin');
+    if (pin) { ev.stopPropagation(); showCard(pin.dataset.pin); }
+  });
+  pinsHost.addEventListener('keydown', ev => {
+    const pin = ev.target.closest('.pin');
+    if (pin && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); showCard(pin.dataset.pin); }
+  });
+  $('.plan').addEventListener('click', () => showCard(null));
+
+  function showCard(id) {
+    state.event = id;
+    $$('.pin', pinsHost).forEach(p => { p.classList.remove('enter'); p.classList.toggle('hidden', p.dataset.pin === id); });
+    $$('.card', pinsHost).forEach(c => {
+      const open = c.dataset.card === id;
+      if (!open && c.classList.contains('open')) setTimeout(() => c.classList.remove('show-qr'), 400);
+      c.classList.toggle('open', open);
+    });
+    hint(id ? 'Tap Join to save it to your phone' : 'Tap a pin to see what’s on');
+    report();
+  }
+
+  /* Join → a real QR code that opens an “add to calendar” link on the visitor's phone */
+  function to24(t) {
+    let [, h, m, ap] = t.match(/(\d+):(\d+)\s*(AM|PM)/);
+    h = +h % 12 + (ap === 'PM' ? 12 : 0);
+    return [h, +m];
+  }
+  function calendarURL(e) {
+    const [h, m] = to24(e.time), pad = n => String(n).padStart(2, '0');
+    const start = `20270222T${pad(h)}${pad(m)}00`, end = `20270222T${pad((h + 1) % 24)}${pad(m)}00`;
+    const q = new URLSearchParams({ action: 'TEMPLATE', text: e.listTitle || e.title, dates: `${start}/${end}`, location: e.place, details: `${e.desc}\n\nHosted by ${e.host.name}, ${e.host.role}` });
+    return 'https://calendar.google.com/calendar/render?' + q;
+  }
+  function qrSVG(text) {
+    const q = qrcode(0, 'L'); q.addData(text); q.make();
+    const n = q.getModuleCount(); let d = '';
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) d += `M${c} ${r}h1v1h-1z`;
+    return `<svg viewBox="0 0 ${n} ${n}" shape-rendering="crispEdges"><path d="${d}" fill="#0f172a"/></svg>`;
+  }
+  function showQR(card) {
+    const box = $('.qr', card);
+    if (!box.firstChild) box.innerHTML = qrSVG(calendarURL(EVENTS[card.dataset.card]));
+    card.classList.add('show-qr');
+    hint('Scan with your phone camera to add it to your calendar');
+    report();
+  }
+
+  /* ── Views ────────────────────────────────────────────────────────── */
+  function setFloorClasses(floor) {
+    $$('.level').forEach(l => {
+      const n = +l.dataset.level;
+      l.classList.toggle('is-selected', n === floor);
+      l.classList.toggle('is-above', n > floor);
+      l.classList.toggle('is-below', n < floor);
+    });
+    $$('.rail button').forEach(b => b.classList.toggle('on', +b.dataset.go === floor));
+    $$('.pager button[data-go]').forEach(b => b.classList.toggle('on', +b.dataset.go === floor));
+    const order = [floor, ...[3, 2, 1].filter(n => n !== floor)];
+    $$('.stack .sq').forEach(s => {
+      const d = order.indexOf(+s.dataset.n);
+      s.className = 'sq' + (d === 0 ? ' top' : ` d${d}`);
+    });
+    screen.dataset.floor = floor;
+  }
+
+  let fromTimer;
+  function report() {
+    if (window.parent === window) return;
+    const card = $('.card.open');
+    window.parent.postMessage({ seekState: {
+      view: state.view, floor: state.floor, sheet: state.sheet,
+      event: state.event, qr: !!(card && card.classList.contains('show-qr')),
+    } }, '*');
+  }
+  function go(view) {
+    screen.classList.remove('peek', 'peek-hold', 'press');
+    screen.dataset.from = state.view;
+    clearTimeout(fromTimer);
+    fromTimer = setTimeout(() => delete screen.dataset.from, 1600);
+    state.view = view;
+    screen.dataset.view = view;
+    $('.plan').setAttribute('aria-hidden', view !== 'plan');
+    if (view === 'idle') hint('Tap the building to explore');
+    if (view === 'explore') hint('Pick a floor, or tap a pin');
+    report();
+  }
+
+  function openExplore() {
+    showCard(null);
+    $$('.level').forEach(l => l.classList.remove('hot'));
+    go('explore');
+  }
+
+  function openPlan(floor, eventId) {
+    if (state.view === 'plan') return switchFloor(floor, eventId);
+    state.floor = floor;
+    $$('.level').forEach(l => l.classList.remove('hot'));
+    setFloorClasses(floor);
+    renderPlan(floor);
+    go('plan');
+    hint('Tap a pin to see what’s on');
+    if (eventId) setTimeout(() => showCard(eventId), 1250);
+  }
+
+  function switchFloor(floor, eventId) {
+    if (floor === state.floor) { if (eventId) showCard(eventId); return; }
+    const content = $('#planContent');
+    const dir = floor > state.floor ? 1 : -1;
+    content.style.setProperty('--shift', `${dir * 80}px`);
+    content.classList.add('leaving');
+    setTimeout(() => {
+      state.floor = floor;
+      screen.classList.add('instant');
+      setFloorClasses(floor);
+      void screen.offsetWidth;
+      screen.classList.remove('instant');
+      renderPlan(floor);
+      state.event = null; report();
+      content.style.setProperty('--shift', `${-dir * 80}px`);
+      void content.offsetWidth;
+      content.classList.remove('leaving');
+      if (eventId) setTimeout(() => showCard(eventId), 650);
+    }, 260);
+  }
+
+  function goHome() {
+    closeSheet();
+    showCard(null);
+    go('idle');
+  }
+
+  /* ── Sheet (tap or drag) ──────────────────────────────────────────── */
+  const sheet = $('#sheet');
+  function openSheet() { state.sheet = true; screen.classList.add('sheet-open'); hint('Tap an event to see it on the map'); report(); }
+  function closeSheet() {
+    if (!state.sheet) return;
+    state.sheet = false; screen.classList.remove('sheet-open'); report();
+    hint(state.view === 'idle' ? 'Tap the building to explore' : state.view === 'explore' ? 'Pick a floor, or tap a pin' : 'Tap a pin to see what’s on');
+  }
+  let drag = null;
+  sheet.addEventListener('pointerdown', e => {
+    if (state.sheet && e.target.closest('.ev')) return;
+    drag = { y: e.clientY, t: performance.now(), dy: 0, moved: false, id: e.pointerId };
+  });
+  window.addEventListener('pointermove', e => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const k = scale || 1;
+    drag.dy = (e.clientY - drag.y) / k;
+    if (!drag.moved && Math.abs(drag.dy) > 12) { drag.moved = true; sheet.classList.add('dragging'); }
+    if (!drag.moved) return;
+    const min = state.sheet ? 0 : -2760, max = state.sheet ? 2760 : 0;
+    let d = Math.max(min, Math.min(max, drag.dy));
+    if (drag.dy > max) d = max + (drag.dy - max) * .2;           // rubber band
+    if (drag.dy < min) d = min + (drag.dy - min) * .2;
+    sheet.style.setProperty('--drag', d + 'px');
+  });
+  window.addEventListener('pointerup', e => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const { dy, moved, t } = drag; drag = null;
+    sheet.classList.remove('dragging');
+    sheet.style.setProperty('--drag', '0px');
+    if (!moved) return;
+    sheet.dataset.justDragged = '1'; setTimeout(() => delete sheet.dataset.justDragged, 50);
+    const v = dy / Math.max(1, performance.now() - t);              // design px per ms
+    if (!state.sheet && (dy < -500 || v < -1.2)) openSheet();
+    else if (state.sheet && (dy > 500 || v > 1.2)) closeSheet();
+  });
+  $('#peek').addEventListener('click', () => { if (!sheet.dataset.justDragged) state.sheet ? closeSheet() : openSheet(); });
+  $('#sheetClose').addEventListener('click', closeSheet);
+  $('#peek').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openSheet(); } });
+  $('#scrim').addEventListener('click', closeSheet);
+
+  /* ── Wiring ───────────────────────────────────────────────────────── */
+  const hit = $('.building-hit');
+  hit.addEventListener('click', openExplore);
+  hit.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openExplore(); } });
+  hit.addEventListener('pointerenter', e => e.pointerType === 'mouse' && screen.classList.add('peek-hold'));
+  hit.addEventListener('pointerleave', () => screen.classList.remove('peek-hold', 'press'));
+  hit.addEventListener('pointerdown', () => screen.classList.add('press', 'peek-hold'));
+  window.addEventListener('pointerup', () => screen.classList.remove('press'));
+  // every few seconds on the attract screen the floors ease apart and settle back
+  setInterval(() => {
+    if (state.view !== 'idle' || state.sheet || screen.classList.contains('peek-hold')) return;
+    screen.classList.add('peek');
+    setTimeout(() => screen.classList.remove('peek'), 1100);
+  }, 4200);
+
+  $$('.level').forEach(l => {
+    const n = +l.dataset.level, slab = $('.slab-hit', l);
+    slab.addEventListener('click', () => openPlan(n));
+    const on = () => { if (state.view !== 'explore') return; l.classList.add('hot'); $$('.rail button').forEach(b => b.classList.toggle('on', +b.dataset.go === n)); };
+    const off = () => { l.classList.remove('hot'); $$('.rail button').forEach(b => b.classList.toggle('on', +b.dataset.go === state.floor)); };
+    slab.addEventListener('pointerenter', on); slab.addEventListener('pointerleave', off);
+    $$('.mini-pin', l).forEach(p => { p.addEventListener('pointerenter', on); p.addEventListener('pointerleave', off); });
+  });
+  $$('.rail button').forEach(b => {
+    const l = $(`.L${b.dataset.go}`);
+    b.addEventListener('click', () => openPlan(+b.dataset.go));
+    b.addEventListener('pointerenter', () => state.view === 'explore' && l.classList.add('hot'));
+    b.addEventListener('pointerleave', () => l.classList.remove('hot'));
+  });
+  $$('.pager button[data-go]').forEach(b => b.addEventListener('click', () => { showCard(null); switchFloor(+b.dataset.go); }));
+  $('#stack').addEventListener('click', openExplore);
+  $('#logo').addEventListener('click', goHome);
+  document.getElementById('restart').addEventListener('click', goHome);
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    if (state.sheet) closeSheet();
+    else if (state.event) showCard(null);
+    else if (state.view === 'plan') openExplore();
+    else if (state.view === 'explore') goHome();
+  });
+
+  // kiosk behaviour: warn after 50s alone, then return to the attract screen
+  const still = $('#still'), stillN = $('#stillN');
+  const mark = $('.still-mark');
+  // every shape of the mark except the red core, ordered clockwise from 12 o'clock
+  let dots = [];
+  const orderDots = () => {
+    if (dots.length) return;
+    dots = $$('path, circle', mark).filter(c => c.getAttribute('fill') !== '#ED250F').map(c => {
+      const b = c.getBBox();
+      return { c, a: (Math.atan2(b.y + b.height / 2 - 133, b.x + b.width / 2 - 133) + Math.PI * 2.5) % (Math.PI * 2) };
+    }).sort((x, y) => x.a - y.a).map(d => (d.c.classList.add('piece'), d.c));
+  };
+  $$('circle', mark).find(c => c.getAttribute('fill') === '#ED250F')?.classList.add('core');
+  const SECONDS = 10;
+  let idleTimer, countdown;
+  const poke = () => {
+    clearTimeout(idleTimer); clearInterval(countdown); still.classList.remove('show');
+    idleTimer = setTimeout(() => {
+      if (state.view === 'idle' && !state.sheet) return;
+      const t0 = performance.now();
+      orderDots();
+      dots.forEach(d => d.classList.remove('gone'));
+      stillN.textContent = SECONDS; still.classList.add('show');
+      countdown = setInterval(() => {
+        const t = (performance.now() - t0) / 1000;
+        stillN.textContent = Math.max(0, Math.ceil(SECONDS - t));
+        const gone = Math.min(dots.length, Math.floor(t / SECONDS * dots.length));
+        dots.forEach((d, i) => d.classList.toggle('gone', i < gone));
+        if (t >= SECONDS) { clearInterval(countdown); still.classList.remove('show'); goHome(); }
+      }, 100);
+    }, 50000);
+  };
+  $('#stillOver').addEventListener('click', () => { clearInterval(countdown); still.classList.remove('show'); goHome(); });
+  ['pointerdown', 'keydown'].forEach(t => window.addEventListener(t, poke, { passive: true }));
+  poke();
+  screen.addEventListener('contextmenu', e => e.preventDefault());
+  $('#back').addEventListener('click', openExplore);
+
+  /* ── Caption hint ─────────────────────────────────────────────────── */
+  const hintEl = document.getElementById('hint');
+  let hintText = hintEl.textContent;
+  function hint(t) {
+    if (t === hintText) return;
+    hintText = t;
+    hintEl.classList.add('swap');
+    setTimeout(() => { hintEl.textContent = t; hintEl.classList.remove('swap'); }, 180);
+  }
+
+  /* ── Fit the 2100 × 3536 kiosk into whatever box embeds it ────────── */
+  const fit = document.getElementById('fit'), slot = document.getElementById('slot'), device = document.getElementById('device');
+  let scale = 1;
+  function resize() {
+    const r = fit.getBoundingClientRect();
+    scale = Math.min(r.width / W, r.height / H);
+    device.style.transform = `scale(${scale})`;
+    slot.style.width = W * scale + 'px';
+    slot.style.height = H * scale + 'px';
+  }
+  new ResizeObserver(resize).observe(fit);
+  resize();
+  setFloorClasses(3);
+
+  /* host API: the 3D kiosk page drives the tour with postMessage({ seek: cmd }) */
+  window.addEventListener('message', e => {
+    if (e.source !== window.parent || !e.data || !e.data.seek) return;
+    const { cmd, floor = 3, event } = e.data.seek;
+    poke();
+    if (cmd !== 'sheet') closeSheet();
+    const wait = state.sheet ? 380 : 0;
+    setTimeout(() => {
+      if (cmd === 'home') goHome();
+      else if (cmd === 'explore') openExplore();
+      else if (cmd === 'plan') { if (state.view === 'plan' && !event) showCard(null); openPlan(floor, event); }
+      else if (cmd === 'qr') {
+        const delay = state.view === 'plan' && state.floor === floor ? 0 : 1300;
+        openPlan(floor, event);
+        setTimeout(() => { showCard(event); setTimeout(() => showQR($(`[data-card="${event}"]`)), 450); }, delay);
+      }
+      else if (cmd === 'sheet') { showCard(null); openSheet(); }
+    }, wait);
+  });
+  report();
+})();
+</script>
+</body>
+</html>

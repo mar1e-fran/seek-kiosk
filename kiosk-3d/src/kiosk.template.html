@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SEEK Kiosk 3D</title>
+<meta name="description" content="A 3D model of the SEEK wayfinding kiosk. Tap it to walk up to the screen and use the live prototype.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Akatab:wght@400;600;700;900&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-1: #f6f8fb;
+  --bg-2: #dde3ec;
+  --ink: #0f172a;
+  --muted: #5b6474;
+  --panel: rgba(255, 255, 255, .72);
+  --panel-line: rgba(15, 23, 42, .08);
+  --chip: rgba(15, 23, 42, .06);
+  --active: #0f172a;
+  --active-ink: #fff;
+  --accent: #fe8a01;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg-1: #1a212d; --bg-2: #090c12; --ink: #e8edf6; --muted: #8b95a7;
+    --panel: rgba(20, 26, 36, .72); --panel-line: rgba(255, 255, 255, .08); --chip: rgba(255, 255, 255, .07);
+    --active: #e8edf6; --active-ink: #0f172a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg-1: #1a212d; --bg-2: #090c12; --ink: #e8edf6; --muted: #8b95a7;
+  --panel: rgba(20, 26, 36, .72); --panel-line: rgba(255, 255, 255, .08); --chip: rgba(255, 255, 255, .07);
+  --active: #e8edf6; --active-ink: #0f172a;
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: radial-gradient(90% 70% at 50% 38%, var(--bg-1), var(--bg-2));
+  background-color: var(--bg-2);
+  color: var(--ink);
+  font-family: "Akatab", system-ui, sans-serif;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+#stage { position: fixed; inset: 0; }
+#css, #gl { position: absolute; inset: 0; }
+#gl { pointer-events: none; }
+#css.hovering { cursor: pointer; }
+#css.zoomed { cursor: zoom-out; }
+.screen-frame { width: 1050px; height: 1768px; background: #000; }
+.screen-frame iframe { width: 100%; height: 100%; border: 0; display: block; pointer-events: none; }
+.screen-frame.live iframe { pointer-events: auto; }
+.screen-frame.live { cursor: auto; }
+
+/* ── chrome ── */
+.brand {
+  position: fixed; left: 24px; top: 20px; z-index: 5;
+  display: flex; flex-direction: column; gap: 2px; pointer-events: none;
+}
+.brand b { font-weight: 900; font-size: 15px; letter-spacing: .14em; }
+.brand span { font-size: 14px; color: var(--muted); }
+
+/* one quiet caption line: muted hint + underlined text actions */
+.caption {
+  position: fixed; left: 0; right: 0; bottom: 22px; z-index: 6;
+  display: flex; justify-content: center; align-items: baseline; gap: 28px; flex-wrap: wrap;
+  padding: 0 16px; font-size: 17px; line-height: 1.4; pointer-events: none;
+}
+.caption .msg { color: var(--muted); transition: opacity .2s ease; }
+.caption .msg.swap { opacity: 0; }
+.caption button {
+  color: var(--ink); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 5px;
+  pointer-events: auto; transition: opacity .2s ease;
+}
+.caption button:hover { opacity: .7; }
+.caption .z { display: none; }
+body.zoomed .caption .z { display: inline; }
+body.zoomed .caption .o { display: none; }
+body.loading .caption { opacity: 0; }
+
+.tip {
+  position: fixed; left: 0; top: 0; z-index: 6; pointer-events: none;
+  padding: 7px 12px; border-radius: 999px; background: var(--active); color: var(--active-ink);
+  font-size: 13px; font-weight: 700; white-space: nowrap;
+  opacity: 0; transform: translate(14px, 14px) scale(.9); transform-origin: 0 0;
+  transition: opacity .18s ease, transform .25s cubic-bezier(.22, 1, .36, 1);
+}
+.tip.show { opacity: 1; transform: translate(14px, 14px) scale(1); }
+
+body.zoomed .brand { opacity: 0; }
+.brand { transition: opacity .3s ease; }
+
+/* loader */
+.loader {
+  position: fixed; inset: 0; z-index: 10; display: grid; place-items: center;
+  background: var(--bg-2); transition: opacity .7s ease .1s;
+}
+.loader div { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 14px; }
+.loader i { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: ping 1.4s ease-out infinite; }
+@keyframes ping { 0% { box-shadow: 0 0 0 0 rgba(254, 138, 1, .55); } 80%, 100% { box-shadow: 0 0 0 9px rgba(254, 138, 1, 0); } }
+body:not(.loading) .loader { opacity: 0; pointer-events: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition-duration: .01ms !important; transition-delay: 0s !important; }
+}
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body class="loading">
+<div id="stage"><div id="css"></div><canvas id="gl"></canvas></div>
+
+<div class="brand"><b>SEEK</b><span>Office wayfinding kiosk · interactive prototype</span></div>
+<div class="tip" id="tip">Use the kiosk</div>
+<div class="caption" aria-live="polite">
+  <span class="msg o">Tap the kiosk to use it, or drag to look around</span>
+  <button class="o" id="use">Use the kiosk</button>
+  <span class="msg z" id="msg">Tap the building to explore</span>
+  <button class="z" id="restart">Restart</button>
+  <button class="z" id="back">Step back</button>
+</div>
+
+<div class="loader"><div><i></i>Powering on the kiosk</div></div>
+
+<script type="module">
+import * as THREE from 'three';
+import { CSS3DRenderer, CSS3DObject } from 'three/addons/renderers/CSS3DRenderer.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+
+const SCREEN_SRC = '{{SCREEN_SRC}}';
+const LOGO_SRC = '{{LOGO_SRC}}';
+
+/* ── Kiosk dimensions (metres) ─────────────────────────────────────── */
+const DESIGN_W = 2100, DESIGN_H = 3536;
+const SCREEN_W = 0.62, SCREEN_H = SCREEN_W * DESIGN_H / DESIGN_W;
+const SCREEN_Y = 1.28, SCREEN_Z = 0.0566;
+const FRAME_W = 1050, FRAME_H = 1768;            // iframe CSS size, half the design resolution
+
+/* ── Renderers ─────────────────────────────────────────────────────── */
+const stage = document.getElementById('stage');
+const cssHost = document.getElementById('css');
+const canvas = document.getElementById('gl');
+
+const gl = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+gl.setPixelRatio(Math.min(devicePixelRatio, 2));
+gl.setClearColor(0x000000, 0);
+gl.outputColorSpace = THREE.SRGBColorSpace;
+gl.toneMapping = THREE.ACESFilmicToneMapping;
+gl.toneMappingExposure = 1.05;
+gl.shadowMap.enabled = true;
+gl.shadowMap.type = THREE.VSMShadowMap;
+
+const css = new CSS3DRenderer();
+cssHost.appendChild(css.domElement);
+
+const scene = new THREE.Scene();
+const cssScene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(30, 1, 0.05, 60);
+
+const pmrem = new THREE.PMREMGenerator(gl);
+scene.environment = pmrem.fromScene(new RoomEnvironment(gl), 0.04).texture;
+
+/* ── Lights ── */
+scene.add(new THREE.HemisphereLight(0xf2f6ff, 0x8a94a6, 0.55));
+const key = new THREE.DirectionalLight(0xffffff, 2.4);
+key.position.set(2.2, 4.6, 3.2);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.radius = 10;
+key.shadow.blurSamples = 20;
+key.shadow.bias = -0.0004;
+Object.assign(key.shadow.camera, { left: -1.6, right: 1.6, top: 2.6, bottom: -0.6, near: 1, far: 12 });
+scene.add(key);
+const rim = new THREE.DirectionalLight(0xbfd6ff, 1.1);
+rim.position.set(-3, 2.5, -2.5);
+scene.add(rim);
+
+/* ── Materials ── */
+const shell = new THREE.MeshPhysicalMaterial({ color: 0x0b0e14, metalness: 0.35, roughness: 0.48, clearcoat: 0.7, clearcoatRoughness: 0.18, envMapIntensity: 0.55 });
+const glass = new THREE.MeshPhysicalMaterial({ color: 0x020305, metalness: 0, roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.03, envMapIntensity: 0.35 });
+const alu = new THREE.MeshPhysicalMaterial({ color: 0xd3d8df, metalness: 0.95, roughness: 0.32, envMapIntensity: 1.1 });
+const accent = new THREE.MeshBasicMaterial({ color: 0xfe8a01, toneMapped: false });
+
+/* ── Kiosk ── */
+const kiosk = new THREE.Group();
+scene.add(kiosk);
+const add = (geo, mat, x, y, z, opts = {}) => {
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set(x, y, z);
+  m.castShadow = opts.cast ?? true;
+  m.receiveShadow = opts.receive ?? true;
+  kiosk.add(m);
+  return m;
+};
+add(new RoundedBoxGeometry(0.98, 0.07, 0.52, 4, 0.022), alu, 0, 0.035, 0);                 // plinth
+add(new RoundedBoxGeometry(0.46, 0.06, 0.16, 3, 0.01), shell, 0, 0.095, 0);                 // neck
+add(new RoundedBoxGeometry(0.78, 1.78, 0.1, 6, 0.036), shell, 0, 1.01, 0);                  // body
+add(new RoundedBoxGeometry(0.735, 1.715, 0.008, 4, 0.004), glass, 0, 1.02, 0.051, { cast: false }); // front glass
+for (const sx of [-1, 1]) add(new THREE.BoxGeometry(0.004, 1.52, 0.03), accent, sx * 0.3905, 1.02, 0, { cast: false, receive: false }); // light strips
+add(new THREE.BoxGeometry(0.62, 0.004, 0.004), accent, 0, 0.0715, 0.24, { cast: false, receive: false }); // plinth edge light
+
+// screen: a "hole" in the WebGL layer through which the live DOM shows
+const hole = add(new THREE.PlaneGeometry(SCREEN_W, SCREEN_H),
+  new THREE.MeshBasicMaterial({ color: 0x000000, opacity: 0, blending: THREE.NoBlending }), 0, SCREEN_Y, SCREEN_Z, { cast: false, receive: false });
+hole.name = 'screen';
+
+// glass glare over the screen (fades when you step up)
+const glare = (() => {
+  const c = document.createElement('canvas'); c.width = 512; c.height = 860;
+  const g = c.getContext('2d');
+  const lg = g.createLinearGradient(0, 0, c.width, c.height);
+  lg.addColorStop(0, 'rgba(255,255,255,0.0)');
+  lg.addColorStop(0.32, 'rgba(255,255,255,0.10)');
+  lg.addColorStop(0.42, 'rgba(255,255,255,0.02)');
+  lg.addColorStop(0.62, 'rgba(255,255,255,0.0)');
+  g.fillStyle = lg; g.fillRect(0, 0, c.width, c.height);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  const m = new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, toneMapped: false });
+  return add(new THREE.PlaneGeometry(SCREEN_W, SCREEN_H), m, 0, SCREEN_Y, SCREEN_Z + 0.0004, { cast: false, receive: false });
+})();
+
+// lower panel: logo + tagline + speaker grille printed on the glass
+const panelMat = new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, toneMapped: false, opacity: 0 });
+add(new THREE.PlaneGeometry(0.56, 0.56), panelMat, 0, 0.47, SCREEN_Z, { cast: false, receive: false });
+(async () => {
+  const svg = await (await fetch(LOGO_SRC)).text();
+  const img = new Image();
+  img.src = URL.createObjectURL(new Blob([svg.replaceAll('#0F172A', '#E8EDF6')], { type: 'image/svg+xml' }));
+  await img.decode();
+  await document.fonts.load('600 40px Akatab');
+  const c = document.createElement('canvas'); c.width = c.height = 1024;
+  const g = c.getContext('2d');
+  g.drawImage(img, 512 - 120, 170, 240, 240);
+  g.fillStyle = 'rgba(232,237,246,.92)'; g.textAlign = 'center';
+  g.font = '900 64px Akatab'; g.letterSpacing = '14px'; g.fillText('SEEK', 512, 510);
+  g.font = '600 34px Akatab'; g.letterSpacing = '0px'; g.fillStyle = 'rgba(232,237,246,.5)';
+  g.fillText('Find your floor. Find your people.', 512, 572);
+  g.fillStyle = 'rgba(232,237,246,.16)';
+  for (let r = 0; r < 3; r++) for (let i = 0; i < 18; i++) { g.beginPath(); g.arc(512 - 17 * 22 / 2 * 1.0 + i * 22, 820 + r * 22, 4.2, 0, Math.PI * 2); g.fill(); }
+  panelMat.map = new THREE.CanvasTexture(c); panelMat.map.colorSpace = THREE.SRGBColorSpace; panelMat.map.anisotropy = 8;
+  panelMat.opacity = 1; panelMat.needsUpdate = true;
+})();
+
+/* ── Floor: shadow catcher + soft contact shadow + warm glow ── */
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), new THREE.ShadowMaterial({ opacity: 0.2 }));
+floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+const blob = (size, stops, opacity, blending = THREE.NormalBlending) => {
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const g = c.getContext('2d'), rg = g.createRadialGradient(128, 128, 0, 128, 128, 128);
+  stops.forEach(([o, col]) => rg.addColorStop(o, col)); g.fillStyle = rg; g.fillRect(0, 0, 256, 256);
+  const t = new THREE.CanvasTexture(c);
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(size[0], size[1]), new THREE.MeshBasicMaterial({ map: t, transparent: true, opacity, depthWrite: false, blending, toneMapped: false }));
+  m.rotation.x = -Math.PI / 2; m.position.y = 0.001; scene.add(m); return m;
+};
+blob([1.5, 1.0], [[0, 'rgba(0,0,0,.55)'], [1, 'rgba(0,0,0,0)']], 0.55);
+const glow = blob([2.4, 1.6], [[0, 'rgba(120,170,255,.55)'], [0.5, 'rgba(120,170,255,.12)'], [1, 'rgba(120,170,255,0)']], 0.18, THREE.AdditiveBlending);
+glow.position.z = 0.55;
+
+/* ── The live screen (CSS3D) ── */
+const frame = document.createElement('div');
+frame.className = 'screen-frame';
+const iframe = document.createElement('iframe');
+iframe.title = 'SEEK kiosk screen';
+iframe.src = SCREEN_SRC;
+frame.appendChild(iframe);
+const screenObj = new CSS3DObject(frame);
+screenObj.position.set(0, SCREEN_Y, SCREEN_Z);
+screenObj.scale.setScalar(SCREEN_W / FRAME_W);
+cssScene.add(screenObj);
+
+/* ── Camera & controls ─────────────────────────────────────────────── */
+const controls = new OrbitControls(camera, css.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.enablePan = false;
+controls.minPolarAngle = 1.05;
+controls.maxPolarAngle = 1.62;
+controls.minAzimuthAngle = -0.95;
+controls.maxAzimuthAngle = 0.95;
+controls.rotateSpeed = 0.55;
+controls.zoomSpeed = 0.6;
+
+const OVERVIEW_TARGET = new THREE.Vector3(0, 0.98, 0);
+const tanHalf = () => Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+function overviewDistance() {
+  const w = innerWidth, h = innerHeight, a = w / h;
+  return Math.max(2.25 / (2 * tanHalf() * 0.82), 1.25 / (2 * tanHalf() * a * 0.82));
+}
+function overviewPose(theta = 0.42) {
+  const d = overviewDistance();
+  const sph = new THREE.Spherical(d, 1.43, theta);
+  return { pos: new THREE.Vector3().setFromSpherical(sph).add(OVERVIEW_TARGET), target: OVERVIEW_TARGET.clone() };
+}
+
+/* frame a region of the screen (in 2100×3536 design px) inside the free part of the viewport */
+function availableRect() {
+  const w = innerWidth, h = innerHeight;
+  return { x: 16, y: 20, w: w - 32, h: h - 20 - 64 };
+}
+function screenPose(region = [0, 0, DESIGN_W, DESIGN_H], margin = 1.04) {
+  const [rx, ry, rw, rh] = region;
+  const cx = (rx + rw / 2) / DESIGN_W - 0.5, cy = (ry + rh / 2) / DESIGN_H - 0.5;
+  const wx = cx * SCREEN_W, wy = SCREEN_Y - cy * SCREEN_H;
+  const ww = rw / DESIGN_W * SCREEN_W * margin, wh = rh / DESIGN_H * SCREEN_H * margin;
+  const W = innerWidth, H = innerHeight, r = availableRect();
+  const visH = Math.max(wh * H / r.h, ww * H / r.w);          // world height of the whole viewport
+  const d = visH / (2 * tanHalf());
+  const ppw = H / visH;                                        // px per world unit
+  const offX = (r.x + r.w / 2 - W / 2) / ppw, offY = (r.y + r.h / 2 - H / 2) / ppw;
+  const target = new THREE.Vector3(wx - offX, wy + offY, SCREEN_Z);
+  return { pos: target.clone().add(new THREE.Vector3(0, 0, d)), target };
+}
+
+/* ── Flight ── */
+let flight = null;
+const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+function fly(to, dur = 1500, done) {
+  flight = {
+    fromPos: camera.position.clone(), fromTarget: controls.target.clone(),
+    to, start: performance.now(), dur, done,
+    arc: camera.position.distanceTo(to.pos) * 0.06,
+  };
+}
+function stepFlight(now) {
+  if (!flight) return;
+  const t = Math.min(1, (now - flight.start) / flight.dur), k = ease(t);
+  camera.position.lerpVectors(flight.fromPos, flight.to.pos, k);
+  camera.position.y += Math.sin(Math.PI * k) * flight.arc;
+  controls.target.lerpVectors(flight.fromTarget, flight.to.target, k);
+  camera.lookAt(controls.target);
+  if (t === 1) { const f = flight; flight = null; f.done && f.done(); }
+}
+
+/* ── Modes ─────────────────────────────────────────────────────────── */
+let mode = 'overview', returnPose = null;
+function zoomIn() {
+  if (mode !== 'overview') return;
+  mode = 'flying';
+  returnPose = { pos: camera.position.clone(), target: controls.target.clone() };
+  controls.enabled = false;
+  tip.classList.remove('show'); cssHost.classList.remove('hovering');
+  document.body.classList.add('zoomed');
+  fly(screenPose(), 1600, () => {
+    mode = 'zoomed';
+    frame.classList.add('live');
+    cssHost.classList.add('zoomed');
+  });
+}
+function zoomOut() {
+  if (mode !== 'zoomed') return;
+  mode = 'flying';
+  frame.classList.remove('live');
+  cssHost.classList.remove('zoomed');
+  document.body.classList.remove('zoomed');
+  fly(returnPose || overviewPose(), 1400, () => { mode = 'overview'; controls.enabled = true; lastInput = performance.now(); });
+}
+
+/* ── Caption follows what the visitor is doing on the screen ── */
+const msg = document.getElementById('msg');
+const HINTS = {
+  attract: 'Tap the building to explore',
+  explode: 'Pick a floor, or tap a pin',
+  plan: 'Tap a pin to see what’s on',
+  event: 'Tap Join to save it to your phone',
+  qr: 'Scan with your phone camera to add it to your calendar',
+  sheet: 'Tap an event to see it on the map',
+};
+function setMsg(t) {
+  if (msg.textContent === t) return;
+  msg.classList.add('swap');
+  setTimeout(() => { msg.textContent = t; msg.classList.remove('swap'); }, 180);
+}
+addEventListener('message', e => {
+  if (e.source !== iframe.contentWindow || !e.data || !e.data.seekState) return;
+  const s = e.data.seekState;
+  setMsg(HINTS[s.sheet ? 'sheet' : s.qr ? 'qr' : s.view === 'plan' ? (s.event ? 'event' : 'plan') : s.view === 'explore' ? 'explode' : 'attract']);
+});
+document.getElementById('restart').addEventListener('click', () => iframe.contentWindow.postMessage({ seek: { cmd: 'home' } }, '*'));
+
+/* ── Pointer: hover tooltip, click to step up / step back ── */
+const tip = document.getElementById('tip');
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+const hitKiosk = (x, y) => {
+  ndc.set(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  return ray.intersectObject(kiosk, true)[0];
+};
+let down = null, lastInput = performance.now();
+css.domElement.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; lastInput = performance.now(); });
+css.domElement.addEventListener('pointermove', e => {
+  lastInput = performance.now();
+  if (mode !== 'overview' || e.pointerType !== 'mouse') return;
+  const over = !!hitKiosk(e.clientX, e.clientY) && !(e.buttons & 1);
+  cssHost.classList.toggle('hovering', over);
+  tip.classList.toggle('show', over);
+  tip.style.left = e.clientX + 'px'; tip.style.top = e.clientY + 'px';
+});
+css.domElement.addEventListener('pointerleave', () => { tip.classList.remove('show'); cssHost.classList.remove('hovering'); });
+css.domElement.addEventListener('pointerup', e => {
+  if (!down) return;
+  const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y), quick = performance.now() - down.t < 600;
+  down = null;
+  if (moved > 6 || !quick) return;
+  const hit = hitKiosk(e.clientX, e.clientY);
+  if (mode === 'overview' && hit) zoomIn();
+  else if (mode === 'zoomed' && !hit) zoomOut();
+});
+document.getElementById('use').addEventListener('click', zoomIn);
+document.getElementById('back').addEventListener('click', zoomOut);
+addEventListener('keydown', e => {
+  if (e.key === 'Escape') zoomOut();
+  if ((e.key === 'Enter' || e.key === ' ') && mode === 'overview' && document.activeElement === document.body) zoomIn();
+});
+
+/* ── Resize ── */
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+  gl.setSize(w, h, false); css.setSize(w, h);
+  canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+  if (mode === 'zoomed') { const p = screenPose(); camera.position.copy(p.pos); controls.target.copy(p.target); camera.lookAt(p.target); }
+  controls.minDistance = overviewDistance() * 0.7;
+  controls.maxDistance = overviewDistance() * 1.35;
+}
+addEventListener('resize', resize);
+resize();
+
+/* ── Loop ── */
+const sph = new THREE.Spherical();
+let swayT = 0, prev = performance.now();
+function loop(now) {
+  const dt = Math.min(0.05, (now - prev) / 1000); prev = now;
+  stepFlight(now);
+  if (mode === 'overview') {
+    // a slow, gentle drift when nobody is touching it
+    if (now - lastInput > 3500) {
+      swayT += dt;
+      const off = camera.position.clone().sub(controls.target);
+      sph.setFromVector3(off);
+      sph.theta += (0.42 * Math.sin(swayT * 0.16) - sph.theta) * 0.004;
+      camera.position.copy(controls.target).add(new THREE.Vector3().setFromSpherical(sph));
+    }
+    controls.update();
+  }
+  // glare fades as you get close to the glass
+  const dist = camera.position.distanceTo(hole.position);
+  glare.material.opacity = THREE.MathUtils.clamp((dist - 1.6) / 2, 0, 1);
+  gl.render(scene, camera);
+  css.render(cssScene, camera);
+  requestAnimationFrame(loop);
+}
+
+/* ── Intro: start wide, settle in ── */
+const start = overviewPose(0.9);
+camera.position.copy(start.pos).multiplyScalar(1.0).add(new THREE.Vector3(0.6, 0.5, 1.6));
+controls.target.copy(OVERVIEW_TARGET);
+camera.lookAt(controls.target);
+controls.enabled = false;
+requestAnimationFrame(loop);
+
+// reveal once fonts are in and the screen has loaded (or after a short grace period)
+let revealed = false;
+const go = () => {
+  if (revealed) return; revealed = true;
+  document.body.classList.remove('loading');
+  mode = 'flying';
+  fly(overviewPose(), 2200, () => { mode = 'overview'; controls.enabled = true; lastInput = performance.now(); });
+};
+document.fonts.ready.then(() => Promise.race([
+  new Promise(r => iframe.addEventListener('load', r, { once: true })),
+  new Promise(r => setTimeout(r, 2200)),
+])).then(go);
+</script>
+</body>
+</html>

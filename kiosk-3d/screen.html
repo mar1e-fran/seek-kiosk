@@ -1,0 +1,1148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SEEK Kiosk</title>
+<meta name="description" content="Interactive prototype of SEEK, an office wayfinding kiosk: explore the building, drop into a floor, and find what's happening today.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://use.typekit.net/myf3ict.css">
+<link href="https://fonts.googleapis.com/css2?family=Akatab:wght@400;600;700;900&display=swap" rel="stylesheet">
+<script>
+  /* ?embed=1 → transparent page so the host's background shows through; ?theme=dark|light → match the host */
+  (function () {
+    var q = new URLSearchParams(location.search), r = document.documentElement;
+    var t = q.get('theme'); if (t === 'dark' || t === 'light') r.setAttribute('data-theme', t);
+    if (q.get('embed') === '1') r.classList.add('embed');
+  })();
+</script>
+<style>
+html.embed, html.embed body { background: transparent; }
+/* ── Page tokens (the frame around the kiosk) ─────────────────────────── */
+:root {
+  --page: #e8ecf2;
+  --page-glow: #f7f9fc;
+  --ink: #0f172a;
+  --muted: #5b6474;
+  --chip: rgba(15, 23, 42, .06);
+  --bezel: #0d1117;
+  --bezel-edge: #232a36;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page: #0a0d13; --page-glow: #151a24; --ink: #e8edf6; --muted: #8b95a7;
+    --chip: rgba(255, 255, 255, .07); --bezel: #000; --bezel-edge: #2a3140;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --page: #0a0d13; --page-glow: #151a24; --ink: #e8edf6; --muted: #8b95a7;
+  --chip: rgba(255, 255, 255, .07); --bezel: #000; --bezel-edge: #2a3140;
+  color-scheme: dark;
+}
+
+/* ── Kiosk design tokens (from the Figma file) ────────────────────────── */
+.screen {
+  --primary1: #0f172a;
+  --primary3: #b3d0ff;
+  --primary4: #f1f5f9;
+  --tile: #dbe8fb;
+  --secondary2: #fe8a01;
+
+  /* motion */
+  --ease-out: cubic-bezier(.22, 1, .36, 1);
+  --ease-inout: cubic-bezier(.65, 0, .35, 1);
+  --ease-sheet: cubic-bezier(.32, .72, 0, 1);
+  --spring: cubic-bezier(.34, 1.56, .64, 1);
+  --t-build: 1100ms;
+  --t-morph: 950ms;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: radial-gradient(120% 80% at 50% 0%, var(--page-glow), var(--page) 70%);
+  background-color: var(--page);
+  color: var(--ink);
+  font-family: "Akatab", system-ui, sans-serif;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+button:focus-visible, [role="button"]:focus-visible { outline: 6px solid var(--secondary2, #fe8a01); outline-offset: 6px; }
+
+/* ── Embed shell ──────────────────────────────────────────────────────── */
+.shell {
+  height: 100%;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  justify-items: center;
+  align-items: center;
+  padding: 16px 16px 12px;
+  gap: 12px;
+}
+.fit { position: relative; width: 100%; height: 100%; display: grid; place-items: center; min-height: 0; }
+.device-slot { position: relative; }
+.device {
+  position: absolute; left: 0; top: 0;
+  width: 2260px; height: 3696px;
+  padding: 80px;
+  border-radius: 120px;
+  background: linear-gradient(160deg, var(--bezel-edge), var(--bezel) 30%);
+  box-shadow:
+    0 0 0 6px var(--bezel-edge) inset,
+    0 120px 240px -60px rgba(15, 23, 42, .45),
+    0 40px 80px -40px rgba(15, 23, 42, .35);
+  transform-origin: 0 0;
+}
+.device::after { /* glass sheen */
+  content: ""; position: absolute; inset: 80px; border-radius: 48px; pointer-events: none;
+  background: linear-gradient(115deg, rgba(255,255,255,.07), rgba(255,255,255,0) 38%);
+}
+
+.caption {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center;
+  font-size: 14px; line-height: 1.3; color: var(--muted);
+  min-height: 32px;
+}
+.caption .brand { font-weight: 900; letter-spacing: .08em; color: var(--ink); }
+.caption .hint {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 12px; border-radius: 999px; background: var(--chip); color: var(--ink);
+  transition: opacity .25s ease;
+}
+.caption .hint::before {
+  content: ""; width: 7px; height: 7px; border-radius: 50%; background: #fe8a01;
+  box-shadow: 0 0 0 0 rgba(254, 138, 1, .5); animation: ping 1.8s ease-out infinite;
+}
+.caption .hint.swap { opacity: 0; }
+.caption .restart {
+  padding: 6px 12px; border-radius: 999px; color: var(--muted); font-size: 14px;
+  transition: background .2s ease, color .2s ease;
+}
+.caption .restart:hover { background: var(--chip); color: var(--ink); }
+.caption .restart:focus-visible { outline: 2px solid #fe8a01; outline-offset: 2px; }
+/* Embedded on mariecabibihan.com: match the portfolio's quiet, typographic captions */
+html.embed .caption { font-family: "neue-haas-grotesk-text", "Helvetica Neue", system-ui, sans-serif; font-size: 14px; letter-spacing: 0; gap: 16px; -webkit-font-smoothing: antialiased; }
+html.embed .caption .brand { display: none; }
+html.embed .caption .hint { padding: 0; background: none; color: var(--muted); border-radius: 0; }
+html.embed .caption .hint::before { display: none; }
+html.embed .caption .restart { padding: 0; border-radius: 0; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+html.embed .caption .restart:hover { background: none; text-decoration-color: transparent; }
+html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; outline-offset: 4px; }
+@keyframes ping { 0% { box-shadow: 0 0 0 0 rgba(254,138,1,.55); } 80%, 100% { box-shadow: 0 0 0 8px rgba(254,138,1,0); } }
+
+/* ── The kiosk screen: 2100 × 3536 design units ───────────────────────── */
+.screen {
+  position: relative;
+  width: 2100px; height: 3536px;
+  border-radius: 48px;
+  overflow: hidden;
+  background: var(--primary4);
+  isolation: isolate;
+  user-select: none;
+  font-family: "Akatab", system-ui, sans-serif;
+  color: #000;
+}
+.screen.instant, .screen.instant * { transition: none !important; }
+
+.abs { position: absolute; }
+.lh { line-height: 1.32; }
+
+/* Logo */
+.logo {
+  position: absolute; left: 1681px; top: 101px; width: 264px; height: 264px; z-index: 12;
+  border-radius: 50%;
+  transition: transform .7s var(--ease-out);
+}
+.logo img { width: 264px; height: 264px; display: block; transition: transform .6s var(--spring); }
+.logo:active img { transform: scale(.92) rotate(-12deg); }
+.screen[data-view="plan"] .logo { transform: translateY(20px); }
+.screen[data-view="idle"] .logo img { animation: logo-spin 14s linear infinite; }
+@keyframes logo-spin { to { transform: rotate(360deg); } }
+
+/* ── Building stage (Figma "Frame 37": 1682 × 2373 at 209, 496) ───────── */
+.stage {
+  position: absolute; left: 209px; top: 496px; width: 1682px; height: 2373px;
+  /* clip only what leaves through the top edge, like the Figma frame */
+  clip-path: inset(0 -2000px -2000px -2000px);
+  transition: transform .8s var(--ease-sheet), filter .6s ease;
+  z-index: 2;
+}
+.float { position: absolute; inset: 0; }
+.screen[data-view="idle"] .float { animation: float 7s ease-in-out infinite; }
+@keyframes float { 50% { transform: translateY(-18px); } }
+
+.layer { position: absolute; inset: 0; pointer-events: none; }
+.level, .roof, .glass, .furn, .mini-pins {
+  transition:
+    transform var(--t-build) var(--ease-inout),
+    opacity calc(var(--t-build) * .6) ease,
+    translate .9s cubic-bezier(.34, 1.45, .64, 1);
+}
+/* affordance: in idle the floors periodically ease apart (a preview of the
+   explode), and do so on hover/press, so the building itself reads as touchable */
+.screen[data-view="idle"]:is(.peek, .peek-hold) .L3 { translate: 0 -54px; }
+.screen[data-view="idle"]:is(.peek, .peek-hold) .L1 { translate: 0 54px; }
+.screen[data-view="idle"]:is(.peek, .peek-hold) .roof { translate: 0 -120px; }
+.screen[data-view="idle"]:is(.peek, .peek-hold) .glass { translate: calc(var(--dx) * .07) calc(var(--dy) * .07); opacity: .55; }
+.float { scale: 1; transition: scale .25s var(--ease-out); }
+.screen[data-view="idle"].press .float { scale: .975; }
+
+/* iso slab: wrapper box from Figma, inner element carries the isometric transform */
+.slab-box { position: absolute; left: 23px; width: 1584.191px; height: 1060.436px; display: flex; align-items: center; justify-content: center; }
+.slab {
+  position: relative; flex: none; width: 863.241px; height: 1043.116px;
+  transform: rotate(-33.69deg) skewX(22.42deg) scale(1, .92);
+  transition: transform var(--t-morph) var(--ease-inout);
+  pointer-events: none;
+}
+.slab img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.slab .tint { opacity: 0; transition: opacity calc(var(--t-morph) * .7) ease calc(var(--t-morph) * .3); }
+.slab-hit { position: absolute; inset: 0; border-radius: 6px; cursor: pointer; }
+
+.L3 .slab-box { top: 29.35px; }
+.L2 .slab-box { top: 655.78px; }
+.L1 .slab-box { top: 1282.22px; }
+.roof .slab-box { left: 23.66px; top: -1075.93px; }
+
+/* glass walls (idle positions; explode pushes them out) */
+.gw { position: absolute; display: flex; align-items: center; justify-content: center; }
+.gw > div { flex: none; position: relative; }
+.gw .pane { background: rgba(199, 199, 199, .12); border: 1px solid #000; }
+.gw img { position: absolute; display: block; max-width: none; }
+.tL { transform: rotate(-33.69deg) skewX(-33.69deg) scale(1, .83); }
+.tR { transform: rotate(33.69deg) skewX(33.69deg) scale(1, -.83); }
+
+/* mini pins (exploded view) */
+.mini-pin {
+  position: absolute; width: 179px; height: 185px; pointer-events: none;
+  transform-origin: 90px 185px;
+  transition: transform .55s var(--spring), opacity .3s ease;
+}
+.mini-pin img { position: absolute; left: 25.2px; top: 0; width: 130px; height: 185px; filter: drop-shadow(0 6px 10px rgba(15,23,42,.18)); }
+.mini-pin span { position: absolute; left: 90.2px; top: 65px; width: 1em; height: 1em; transform: translate(-50%, -50%); display: flex; align-items: center; justify-content: center; font-size: 64px; line-height: 1; }
+
+/* ── View: idle (stacked building) ── */
+.screen[data-view="idle"] .L3 { transform: translate(25.57px, 462.46px); }
+.screen[data-view="idle"] .L2 { transform: translate(25.57px, 1.46px); }
+.screen[data-view="idle"] .L1 { transform: translate(25.57px, -459.54px); }
+.screen[data-view="idle"] .roof { transform: translate(25.58px, 1460.82px); }
+.screen[data-view="idle"] .L3 .furn { transform: translate(-5.57px, 2.92px); }
+.screen[data-view="idle"] .L2 .furn,
+.screen[data-view="idle"] .L1 .furn { opacity: 0; }
+.screen[data-view="idle"] .mini-pin { opacity: 0; transform: scale(.4); transition-delay: 0s !important; }
+
+/* choreography: walls leave before the floors split; floors close before walls return */
+.screen[data-from="idle"][data-view="explore"] .level { transition-delay: 140ms; }
+.screen[data-from="idle"][data-view="explore"] .roof { transition-delay: 60ms; }
+.screen[data-view="idle"] .glass { transition-delay: 380ms; }
+.screen[data-view="idle"] .roof { transition-delay: 200ms; }
+
+/* ── View: explore (exploded floors) ── */
+.screen:not([data-view="idle"]) .roof { opacity: 0; }
+.screen:not([data-view="idle"]) .glass { opacity: 0; transform: translate(var(--dx), var(--dy)); }
+.screen[data-view="explore"] .slab-hit,
+.screen[data-view="explore"] .mini-pin { pointer-events: auto; cursor: pointer; }
+.screen[data-view="explore"] .level.hot { transform: translateY(-22px); transition-duration: .45s; transition-delay: 0ms; transition-timing-function: var(--ease-out); }
+.screen[data-view="explore"] .level.hot .slab { filter: brightness(1.06) drop-shadow(0 30px 40px rgba(15, 23, 42, .18)); }
+.screen[data-view="explore"] .mini-pin:hover { transform: translateY(-10px) scale(1.06); }
+.screen[data-view="explore"] .mini-pin:active { transform: scale(.9); transition-duration: .12s; }
+.screen[data-view="explore"] .mini-pin { transition-delay: var(--pd, 0ms); }
+
+.building-hit { position: absolute; left: 230px; top: 380px; width: 1260px; height: 1520px; cursor: pointer; display: none; }
+.screen[data-view="idle"] .building-hit { display: block; }
+
+/* ── View: plan (one floor flattened) ── */
+.screen[data-view="plan"] .level:not(.is-selected) { opacity: 0; }
+.screen[data-view="plan"] .level.is-above { transform: translateY(-420px); }
+.screen[data-view="plan"] .level.is-below { transform: translateY(420px); }
+.screen[data-view="plan"] .level .furn,
+.screen[data-view="plan"] .level .mini-pins { opacity: 0; transition-duration: .35s; }
+.screen[data-view="plan"] .level.is-selected .slab { transform: rotate(0deg) skewX(0deg) scale(1.718, 1.718); }
+.screen[data-view="plan"] .level.is-selected .tint { opacity: 1; }
+.screen[data-view="plan"] .L3.is-selected { transform: translate(25.8px, 627.43px); }
+.screen[data-view="plan"] .L2.is-selected { transform: translate(25.8px, 1.22px); }
+.screen[data-view="plan"] .L1.is-selected { transform: translate(25.8px, -625.44px); }
+
+/* floor rail (exploded view labels) */
+.rail { position: absolute; left: 145px; top: 815px; width: 102px; z-index: 5; display: flex; flex-direction: column; gap: 524px; }
+.rail button {
+  width: 102px; height: 102px; border-radius: 10px; background: #fff;
+  font-weight: 700; font-size: 62px; letter-spacing: -1.24px; line-height: 1.32;
+  display: grid; place-items: center;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, .06);
+  opacity: 0; transform: translateX(-40px);
+  transition: opacity .5s ease, transform .6s var(--ease-out), background .25s ease;
+  pointer-events: none;
+}
+.rail button.on { background: var(--secondary2); }
+.screen[data-view="explore"] .rail button { opacity: 1; transform: none; pointer-events: auto; transition-delay: calc(500ms + var(--i) * 70ms), calc(500ms + var(--i) * 70ms), 0ms; }
+
+/* ── Plan layer ── */
+.plan { position: absolute; left: 209px; top: 496px; width: 1682px; height: 2373px; overflow: clip; z-index: 3; pointer-events: none; }
+.plan > * { opacity: 0; transition: opacity .45s ease; }
+.screen[data-view="plan"] .plan { pointer-events: auto; }
+.screen[data-view="plan"] .plan > * { opacity: 1; transition-delay: calc(var(--t-morph) * .82); }
+.plan .plan-building { position: absolute; left: -537px; top: -1075.93px; width: 2836px; height: 3489.598px; display: block; max-width: none; }
+.plan .rooms { position: absolute; left: 145.66px; top: 319.74px; width: 1345.284px; height: 1712.905px; }
+.plan .rooms img { position: absolute; left: -25.5px; top: -25.5px; width: 1396.28px; height: 1763.9px; display: block; max-width: none; }
+.plan .content { position: absolute; inset: 0; transition: opacity .35s ease, transform .5s var(--ease-out); }
+.plan .content.leaving { opacity: 0; transform: translateY(var(--shift, 0)); }
+.plan-bg { position: absolute; inset: 0; }
+
+/* large pins */
+.pin {
+  position: absolute; width: 215px; height: 230px; cursor: pointer;
+  transform-origin: 108px 224px;
+  transition: transform .5s var(--spring), opacity .25s ease;
+}
+.pin img { position: absolute; left: 30.2px; top: 0; width: 156px; height: 224px; filter: drop-shadow(0 10px 16px rgba(15, 23, 42, .16)); }
+.pin span { position: absolute; left: 108.2px; top: 78px; width: 1em; height: 1em; transform: translate(-50%, -50%); display: flex; align-items: center; justify-content: center; font-size: 84px; line-height: 1; }
+.pin:hover { transform: translateY(-12px); }
+.pin:active { transform: scale(.92); transition-duration: .12s; }
+.pin.hidden { opacity: 0; transform: scale(.5); pointer-events: none; }
+.pin.enter { animation: drop .7s var(--spring) both; animation-delay: var(--pd, 0ms); }
+@keyframes drop { from { opacity: 0; transform: translateY(-160px) scale(.7); } 60% { opacity: 1; } to { opacity: 1; transform: none; } }
+
+/* event popover card (Figma "event / details_right" + "detail_left") */
+.card {
+  position: absolute; z-index: 10;
+  transform: scale(.2); opacity: 0;
+  transition: transform .55s var(--spring), opacity .2s ease;
+  pointer-events: none;
+}
+.card.open { transform: none; opacity: 1; pointer-events: auto; }
+.card.right { width: 1146px; height: 887px; transform-origin: 9.5px 82px; }
+.card.left { width: 684px; height: 887px; transform-origin: 153.5px 138.6px; }
+.card .bubble { position: absolute; display: block; max-width: none; }
+.card.right .bubble { left: -17.47px; top: 46.24px; width: 1189px; height: 726px; }
+.card.left .bubble { left: -986.5px; top: 111.57px; width: 1169px; height: 750.85px; }
+.card .body {
+  position: absolute; width: 958px; transform: translate(-50%, -50%);
+  display: flex; flex-direction: column; gap: 57px; align-items: flex-end;
+}
+.card.right .body { left: 587px; top: 401.5px; }
+.card.left .body { left: -402px; top: 491.5px; }
+.card .body { gap: 15px; }
+.card .x {
+  flex: none; width: 104px; height: 104px; border-radius: 50%; background: var(--primary4);
+  display: grid; place-items: center; transition: background .2s ease, transform .2s var(--ease-out);
+}
+.card .x svg { width: 44px; height: 44px; }
+.card .x:active { transform: scale(.9); background: var(--tile); }
+.card .faces { width: 100%; display: grid; }
+.card .faces > * { grid-area: 1 / 1; transition: opacity .3s ease, transform .45s var(--ease-out); }
+.card .info { display: flex; flex-direction: column; gap: 36px; padding-top: 8px; }
+.card .info .desc { margin-top: -14px; }
+.card .tile { height: 160px; }
+.host { display: flex; align-items: center; gap: 22px; }
+.host .av {
+  flex: none; width: 80px; height: 80px; border-radius: 50%; display: grid; place-items: center;
+  font-weight: 700; font-size: 32px; letter-spacing: -.5px; color: #fff;
+}
+.host .who { display: flex; flex-direction: column; line-height: 1.2; }
+.host .by { font-weight: 600; font-size: 26px; color: rgba(15, 23, 42, .55); }
+.host .name { font-weight: 700; font-size: 36px; letter-spacing: -.6px; color: var(--primary1); }
+.host .name span { font-weight: 400; color: rgba(15, 23, 42, .62); }
+.card .qr-face { display: flex; flex-direction: column; align-items: center; opacity: 0; transform: translateY(24px); pointer-events: none; }
+.card.show-qr .info { opacity: 0; transform: translateY(-24px); pointer-events: none; }
+.card.show-qr .qr-face { opacity: 1; transform: none; pointer-events: auto; transition-delay: .12s; }
+.qr { width: 336px; height: 336px; clip-path: inset(0 0 100% 0); transition: clip-path .7s var(--ease-inout) .2s; }
+.card.show-qr .qr { clip-path: inset(0 0 0 0); }
+.qr svg { width: 100%; height: 100%; display: block; }
+.scan {
+  margin-top: 36px; width: 535px; height: 59px; border-radius: 14.652px; background: var(--tile);
+  display: grid; place-items: center; font-size: 35px; letter-spacing: -.7px; line-height: 1.32; color: var(--primary1);
+}
+.card .title-row { width: 100%; display: flex; gap: 30px; align-items: center; font-size: 100px; }
+.card .title-row .em { font-weight: 700; letter-spacing: -2px; line-height: 1.32; }
+.card .title-row h3 { margin: 0; font-weight: 900; line-height: .87; text-transform: capitalize; flex: 1; min-width: 0; font-size: 100px; white-space: nowrap; }
+.card .desc { margin: 0; font-weight: 600; font-size: 30px; letter-spacing: -.6px; line-height: 1.32; }
+.card .tiles { width: 100%; display: flex; gap: 101px; }
+.tile {
+  background: var(--tile); border-radius: 14.652px; height: 177px; width: 428px;
+  padding: 11.988px 17.316px; display: flex; flex-direction: column; gap: 5px;
+  color: var(--primary1);
+}
+.tile + .tile { width: 427px; gap: 2px; }
+.tile .label { display: flex; align-items: center; gap: 7.992px; font-weight: 700; font-size: 33px; letter-spacing: -.66px; line-height: 1.32; }
+.tile .label img { width: 32px; height: 32px; display: block; }
+.tile .value { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 53px; letter-spacing: -1.06px; line-height: 1.32; white-space: nowrap; padding-right: 0; }
+.tile .value.lg { font-size: 65px; letter-spacing: -1.3px; }
+.join {
+  width: 958px; height: 105px; border-radius: 14.652px; background: var(--primary3);
+  font-size: 55px; letter-spacing: -1.1px; line-height: 1.32; color: var(--primary1);
+  display: grid; place-items: center;
+  transition: background .3s ease, transform .2s var(--ease-out);
+}
+.join:hover { background: #a4c6ff; }
+.join:active { transform: scale(.985); }
+
+
+/* plan chrome */
+.chip-floor {
+  position: absolute; left: 107px; top: 114px; width: 567px; height: 264px; z-index: 6;
+  background: var(--primary3); border-radius: 10px; display: grid; place-items: center;
+  font-weight: 700; font-size: 200px; letter-spacing: -4px; line-height: 1.32;
+}
+.stack { position: absolute; left: 107px; top: 431px; width: 264px; height: 264px; z-index: 6; isolation: isolate; }
+.stack .sq {
+  position: absolute; inset: 0; border-radius: 10px; background: var(--primary3);
+  display: grid; place-items: center; font-weight: 700; font-size: 200px; letter-spacing: -4px; line-height: 1.32;
+  transition: transform .6s var(--ease-out), background .3s ease, box-shadow .3s ease;
+}
+.stack .sq.top { background: var(--secondary2); z-index: 3; }
+.stack:hover .sq:not(.top):nth-child(n) { box-shadow: 0 10px 30px rgba(15,23,42,.08); }
+.stack:hover .sq.d1 { transform: translate(22px, 22px); }
+.stack:hover .sq.d2 { transform: translate(44px, 44px); }
+.stack .sq.d1 { z-index: 2; }
+.stack .sq.d2 { z-index: 1; }
+.pager {
+  position: absolute; left: 50%; top: 2850px; width: 1350px; padding: 10px; z-index: 6;
+  transform: translateX(-50%);
+  display: flex; gap: 47px; align-items: center; justify-content: center;
+}
+.pager button {
+  width: 133px; height: 133px; background: var(--primary3);
+  font-weight: 700; font-size: 100px; letter-spacing: -2px; line-height: 1.32;
+  display: grid; place-items: center; padding-top: 6px;
+  transition: background .3s ease, transform .3s var(--spring);
+}
+.pager button:hover { transform: translateY(-6px); }
+.pager button.on { background: var(--secondary2); }
+
+.plan-ui { opacity: 0; pointer-events: none; transition: opacity .4s ease, transform .6s var(--ease-out); }
+.chip-floor.plan-ui, .stack.plan-ui { transform: translateX(-60px); }
+.pager.plan-ui { transform: translate(-50%, 60px); }
+.screen[data-view="plan"] .plan-ui { opacity: 1; pointer-events: auto; transform: none; transition-delay: calc(var(--t-morph) * .7); }
+.screen[data-view="plan"] .pager.plan-ui { transform: translateX(-50%); }
+
+/* ── On-screen guidance (a kiosk has no caption bar) ── */
+.heading {
+  position: absolute; left: 107px; top: 114px; height: 264px; padding: 0 64px; z-index: 6;
+  background: var(--primary3); border-radius: 10px; display: flex; align-items: center;
+  font-weight: 700; font-size: 150px; letter-spacing: -3px; line-height: 1.32;
+  opacity: 0; transform: translateX(-60px); pointer-events: none;
+  transition: opacity .4s ease, transform .6s var(--ease-out);
+}
+.screen[data-view="explore"] .heading { opacity: 1; transform: none; transition-delay: .55s; }
+
+/* pager lead tile: back to the 3D building */
+.pager .to3d { background: var(--primary1); }
+.pager .to3d svg { width: 76px; height: 76px; }
+.pager .sep { width: 4px; height: 96px; border-radius: 2px; background: rgba(15, 23, 42, .14); margin: 0 -10px; }
+.pager button:active, .rail button:active { transform: scale(.94); transition-duration: .12s; }
+
+/* inactivity: the SEEK mark is the countdown, one dot per beat */
+.still {
+  position: absolute; inset: 0; z-index: 40; display: grid; place-items: center;
+  background: rgba(15, 23, 42, .28);
+  backdrop-filter: blur(6.05px); -webkit-backdrop-filter: blur(6.05px);
+  opacity: 0; pointer-events: none; transition: opacity .45s ease;
+}
+.still.show { opacity: 1; pointer-events: auto; }
+.still-card {
+  width: 1500px; padding: 120px 120px 100px; border-radius: 15px; background: var(--primary4);
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  box-shadow: 0 60px 140px -40px rgba(15, 23, 42, .45);
+  transform: translateY(80px) scale(.96); transition: transform .7s var(--spring);
+}
+.still.show .still-card { transform: none; }
+.still-mark { width: 340px; height: 340px; overflow: visible; }
+.still-mark .piece { transition: opacity .6s ease; }
+.still-mark .piece.gone { opacity: .12; }
+.still-mark circle.core { r: 27.08px; }
+.still-mark circle.core { animation: core 1s ease-in-out infinite; }
+@keyframes core { 50% { r: 33px; } }
+.still h3 { margin: 90px 0 0; font-weight: 900; font-size: 150px; letter-spacing: -3px; line-height: 1.05; color: #000; }
+.still p { margin: 36px 0 0; font-size: 58px; letter-spacing: -1.1px; line-height: 1.32; color: rgba(15, 23, 42, .62); }
+.still p b { color: var(--primary1); font-weight: 700; font-variant-numeric: tabular-nums; }
+.still .stay {
+  margin-top: 90px; width: 1100px; height: 150px; border-radius: 14.652px; background: var(--primary3);
+  font-size: 64px; letter-spacing: -1.2px; line-height: 1.32; color: var(--primary1);
+  display: grid; place-items: center; transition: transform .2s var(--ease-out);
+}
+.still .stay:active { transform: scale(.985); }
+.still .over {
+  margin-top: 46px; font-size: 52px; color: var(--primary1);
+  text-decoration: underline; text-decoration-thickness: 3px; text-underline-offset: 14px;
+}
+
+/* ── Events of the Day: sheet + scrim ─────────────────────────────────── */
+.scrim {
+  position: absolute; inset: 0; z-index: 20;
+  background: rgba(0, 0, 0, .2);
+  backdrop-filter: blur(6.05px); -webkit-backdrop-filter: blur(6.05px);
+  opacity: 0; pointer-events: none;
+  transition: opacity .6s ease;
+}
+.screen.sheet-open .scrim { opacity: 1; pointer-events: auto; cursor: pointer; }
+
+.sheet {
+  position: absolute; left: 0; top: 3208px; width: 2100px; height: 3088px; z-index: 21;
+  transform: translateY(var(--drag, 0px));
+  transition: transform .8s var(--ease-sheet);
+  touch-action: none;
+}
+.sheet.dragging { transition: none; }
+.screen.sheet-open .sheet { transform: translateY(calc(-2760px + var(--drag, 0px))); }
+.sheet .bg {
+  position: absolute; inset: 0; background: var(--primary3);
+  border-radius: 136px 136px 0 0;
+  box-shadow: 0 -20px 60px rgba(15, 23, 42, .06);
+  transition: opacity .55s ease;
+}
+.sheet .peek { position: absolute; left: 0; top: 0; width: 100%; height: 330px; cursor: pointer; }
+.sheet .handle {
+  position: absolute; left: 884px; top: 45px; width: 327px; height: 24px; border-radius: 34px;
+  background: var(--primary4); transition: opacity .3s ease, transform .3s ease;
+}
+.sheet .peek:hover .handle { transform: translateY(-6px); }
+.sheet h2 {
+  position: absolute; left: 196px; top: 118px; margin: 0;
+  font-weight: 900; font-size: 120px; letter-spacing: -2.4px; line-height: 1.32; color: #fff; white-space: nowrap;
+  transform-origin: 0 0;
+  transition: transform .8s var(--ease-sheet);
+}
+.sheet-close {
+  position: absolute; left: 1754px; top: 122px; width: 150px; height: 150px; border-radius: 15px;
+  background: var(--primary4); display: grid; place-items: center;
+  opacity: 0; transform: translateY(30px); pointer-events: none;
+  transition: opacity .3s ease, transform .5s var(--ease-out), background .2s ease;
+}
+.sheet-close svg { width: 70px; height: 70px; }
+.screen.sheet-open .sheet-close { opacity: 1; transform: none; pointer-events: auto; transition-delay: .3s; }
+.sheet-close:active { background: var(--tile); transform: scale(.94); transition-delay: 0s; }
+.grid {
+  position: absolute; left: 196px; top: 433px; width: 1709px;
+  display: grid; grid-template-columns: 695px 695px; justify-content: space-between; row-gap: 103px;
+}
+.ev {
+  position: relative; width: 695px; height: 788px; text-align: left; cursor: pointer;
+  transition: transform .45s var(--ease-out);
+}
+.screen.sheet-open .ev { animation: rise .8s var(--ease-sheet) both; animation-delay: calc(80ms + var(--i) * 45ms); }
+@keyframes rise { from { transform: translateY(120px); } }
+.ev .face {
+  position: absolute; left: 0; top: 0; width: 694px; height: 788px;
+  background: var(--primary4); border-radius: 15px; padding: 27px 38px;
+  display: flex; flex-direction: column; gap: 42px; align-items: flex-start; padding-bottom: 22px;
+  transition: box-shadow .35s ease, transform .35s var(--ease-out);
+}
+.ev:hover .face { box-shadow: 0 30px 60px -20px rgba(15, 23, 42, .25); transform: translateY(-10px); }
+.ev:active .face { transform: translateY(-4px) scale(.99); }
+.ev h4 { margin: 0; width: 505px; font-weight: 900; font-size: 80px; letter-spacing: -1.6px; line-height: 1.32; color: #000; }
+.ev .tiles { width: 100%; height: 392px; display: flex; flex-direction: column; gap: 38px; align-items: center; justify-content: center; }
+.ev .t {
+  width: 580px; height: 177px; border-radius: 14.652px; background: var(--tile);
+  display: grid; place-items: center; color: var(--primary1); line-height: 1.32;
+}
+.ev .t.time { font-size: 70px; letter-spacing: -1.4px; }
+.ev .t.place { font-size: 65px; letter-spacing: -1.3px; }
+.ev .where {
+  margin-top: auto; align-self: stretch; display: flex; align-items: center; justify-content: space-between;
+  font-weight: 700; font-size: 36px; letter-spacing: -.5px; line-height: 1.32; color: rgba(15, 23, 42, .62);
+}
+.ev .where b { color: var(--primary1); font-weight: 700; }
+.ev .em {
+  position: absolute; left: 643px; top: 40.5px; transform: translate(-50%, -50%);
+  font-weight: 900; font-size: 204px; letter-spacing: -4.08px; line-height: 1.32; white-space: nowrap;
+  transition: transform .5s var(--spring);
+}
+.ev:hover .em { transform: translate(-50%, -58%) rotate(-8deg); }
+
+/* bare mode (?bare): just the screen, used by the 3D kiosk */
+html.bare body { background: #000; }
+html.bare .shell { padding: 0; gap: 0; grid-template-rows: 1fr; }
+html.bare .caption { display: none; }
+html.bare .device { width: 2100px; height: 3536px; padding: 0; border-radius: 0; background: none; box-shadow: none; }
+html.bare .device::after { display: none; }
+html.bare .screen { border-radius: 0; }
+
+/* reduced motion: keep state changes, drop travel */
+.screen { touch-action: manipulation; -webkit-touch-callout: none; }
+@media (hover: none) {
+  .pin:hover, .pager button:hover, .sheet .peek:hover .handle, .stack:hover .sq { transform: none; }
+  .ev:hover .face { transform: none; box-shadow: none; }
+  .ev:hover .em { transform: translate(-50%, -50%); }
+  .screen[data-view="explore"] .mini-pin:hover { transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .screen { --t-build: 1ms; --t-morph: 1ms; }
+  .screen *, .screen *::before { animation: none !important; transition-duration: 1ms !important; transition-delay: 0ms !important; }
+  .caption .hint::before { animation: none; }
+}
+</style>
+</head>
+<body>
+<script>if (/[?&]bare\b/.test(location.search)) document.documentElement.classList.add('bare');</script>
+<div class="shell">
+  <div class="fit" id="fit">
+    <div class="device-slot" id="slot">
+      <div class="device" id="device">
+        <div class="screen" id="screen" data-view="idle" data-floor="3" role="application" aria-label="SEEK kiosk prototype">
+
+          <!-- Building -->
+          <div class="stage" aria-hidden="false">
+            <div class="float">
+              <!-- back glass walls -->
+              <div class="layer glass" style="--dx:935.83px;--dy:-479.82px">
+                <div class="gw" style="left:767.17px;top:384.89px;width:397.897px;height:705.009px"><div class="tR" style="width:478.212px;height:439.745px"><img src="data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9IjQ3OS4yMTQiIGhlaWdodD0iNDQwLjc0OCIgdmlld0JveD0iMCAwIDQ3OS4yMTQgNDQwLjc0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggaWQ9ImdsYXNzMDkiIGQ9Ik0wLjUgMy41NjI0Nkw0NzguNzEyIDAuNTAzMjE3TDQ3Ny42MzUgNDQwLjI0OEgwLjVWMy41NjI0NloiIGZpbGw9IiNDN0M3QzciIGZpbGwtb3BhY2l0eT0iMC4xMiIgc3Ryb2tlPSJibGFjayIvPgo8L3N2Zz4K" alt="" style="inset:-0.11% -0.1%;width:100.2%;height:100.22%"></div></div>
+              </div>
+              <div class="layer glass" style="--dx:-772.17px;--dy:-503.15px">
+                <div class="gw" style="left:235.17px;top:385.22px;width:532px;height:791.268px"><div class="tL pane" style="width:639.384px;height:436.601px"></div></div>
+              </div>
+              <div class="layer glass" style="--dx:655.63px;--dy:-351.92px">
+                <div class="gw" style="left:1045.37px;top:728.99px;width:466.796px;height:754.675px"><div class="tR" style="width:561.018px;height:443.478px"><img src="data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9IjU2Mi4wMTgiIGhlaWdodD0iNDQ0LjQ4NiIgdmlld0JveD0iMCAwIDU2Mi4wMTggNDQ0LjQ4NiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggaWQ9ImdsYXNzMDciIGQ9Ik0wLjUwMDU1NCAyLjkzOUw1NjEuNTE4IDAuNTAyMTc3VjQzNy4wMThMMC41MDAwMDEgNDQzLjk4TDAuNTAwNTU0IDIuOTM5WiIgZmlsbD0iI0M3QzdDNyIgZmlsbC1vcGFjaXR5PSIwLjEyIiBzdHJva2U9ImJsYWNrIi8+Cjwvc3ZnPgo=" alt="" style="left:0;top:-0.11%;width:100%;height:100.22%"></div></div>
+              </div>
+
+              <!-- Floor 1 (bottom) -->
+              <div class="layer level L1" data-level="1">
+                <div class="slab-box"><div class="slab"><img src="data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9Ijg2My4yNDEiIGhlaWdodD0iMTA0My4xMiIgdmlld0JveD0iMCAwIDg2My4yNDEgMTA0My4xMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggaWQ9ImZsb29yMyIgZD0iTTg2My4yNDEgMEgyMjQuNTA1VjU5NS4wMjlIMFYxMDQzLjEySDcxOC45NDdWNDc5LjcyOUg4NjMuMjQxVjBaIiBmaWxsPSIjMEYxNzJBIi8+Cjwvc3ZnPgo=" alt=""><img class="tint" src="data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9Ijg2My4yNDEiIGhlaWdodD0iMTA0My4xMiIgdmlld0JveD0iMCAwIDg2My4yNDEgMTA0My4xMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggaWQ9ImZsb29yMSIgZD0iTTg2My4yNDEgMEgyMjQuNTA1VjU5NS4wMjlIMFYxMDQzLjEySDcxOC45NDdWNDc5LjcyOUg4NjMuMjQxVjBaIiBmaWxsPSIjQjNEMEZGIi8+Cjwvc3ZnPgo=" alt=""><div class="slab-hit" role="button" tabindex="-1" aria-label="Floor 1"></div></div></div>
+                <div class="layer furn"><div style="position:absolute;display:contents;left:256px;top:1302px"> <div style="position:absolute;display:contents;left:256px;top:1364.38px"> <div style="position:absolute;display:contents;left:538px;top:1911.38px"> <div style="position:absolute;display:flex;height:180.322px;align-items:center;justify-content:center;left:538px;top:1911.38px;width:118.983px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(-33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:143px"></div> </div> </div> <div style="position:absolute;display:flex;height:315.014px;align-items:center;justify-content:center;left:538px;top:1911.38px;width:469.902px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(22.42deg) scale(1,0.92)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:422.723px;position:relative;width:143px"></div> </div> </div> <div style="position:absolute;display:flex;height:180.322px;align-items:center;justify-content:center;left:889px;top:2145.38px;width:118.983px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(-33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:143px"></div> </div> </div> <div style="position:absolute;display:flex;height:335px;align-items:center;justify-content:center;left:538px;top:1990.38px;width:351px"> <div style="flex:none;transform:rotate(33.69deg) skewX(33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:421.849px"></div> </div> </div> <div style="position:absolute;display:flex;height:180.322px;align-items:center;justify-content:center;left:621px;top:1966.38px;width:118.983px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(-33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:143px"></div> </div> </div> <div style="position:absolute;display:flex;height:206.333px;align-items:center;justify-content:center;left:656px;top:1911.38px;width:158px"> <div style="flex:none;transform:rotate(33.69deg) skewX(33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:189.892px"></div> </div> </div> </div> <div style="position:absolute;display:contents;left:884px;top:1895.04px"> <div style="position:absolute;display:flex;height:182.334px;align-items:center;justify-content:center;left:1140px;top:1895.38px;width:122.001px"> <div style="flex:none;transform:rotate(-146.31deg) skewX(33.69deg) scale(1,-0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:146.627px"></div> </div> </div> <div style="position:absolute;display:flex;height:251.153px;align-items:center;justify-content:center;left:886.99px;top:1895.27px;width:374.844px"> <div style="flex:none;transform:rotate(-146.31deg) skewX(-22.42deg) scale(1,-0.92)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:304.419px;position:relative;width:146.787px"></div> </div> </div> <div style="position:absolute;display:flex;height:183.667px;align-items:center;justify-content:center;left:884px;top:2064.38px;width:124.001px"> <div style="flex:none;transform:rotate(-146.31deg) skewX(33.69deg) scale(1,-0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:149.03px"></div> </div> </div> <div style="position:absolute;display:flex;height:270.333px;align-items:center;justify-content:center;left:1008px;top:1976.37px;width:254px"> <div style="flex:none;transform:rotate(146.31deg) skewX(-33.69deg) scale(1,-0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:305.27px"></div> </div> </div> <div style="position:absolute;display:flex;height:235.667px;align-items:center;justify-content:center;left:939px;top:1895.04px;width:202px"> <div style="flex:none;transform:rotate(146.31deg) skewX(-33.69deg) scale(1,-0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:242.774px"></div> </div> </div> </div> <div style="position:absolute;display:contents;left:256px;top:1364.38px"> <div style="position:absolute;display:flex;height:180.322px;align-items:center;justify-content:center;left:502.02px;top:1364.38px;width:118.983px"> <div style="flex:none;transform:rotate(-146.31deg) skewX(33.69deg) scale(1,-0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:143px"></div> </div> </div> <div style="position:absolute;display:flex;height:244.34px;align-items:center;justify-content:center;left:256.32px;top:1364.38px;width:364.677px"> <div style="flex:none;transform:rotate(-146.31deg) skewX(-22.42deg) scale(1,-0.92)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:295.967px;position:relative;width:143px"></div> </div> </div> <div style="position:absolute;display:flex;height:213.301px;align-items:center;justify-content:center;left:375.42px;top:1543.57px;width:318.294px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(22.42deg) scale(1,0.92)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:267.442px;position:relative;width:115.714px"></div> </div> </div> <div style="position:absolute;display:flex;height:413.655px;align-items:center;justify-content:center;left:256.02px;top:1528.39px;width:468.983px"> <div style="flex:none;transform:rotate(-146.31deg) skewX(33.69deg) scale(1,-0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:563.648px"></div> </div> </div> <div style="position:absolute;display:flex;height:201px;align-items:center;justify-content:center;left:471px;top:1443.38px;width:150px"> <div style="flex:none;transform:rotate(146.31deg) skewX(-33.69deg) scale(1,-0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:180.278px"></div> </div> </div> <div style="position:absolute;display:flex;height:165.667px;align-items:center;justify-content:center;left:597px;top:1691.38px;width:97px"> <div style="flex:none;transform:rotate(146.31deg) skewX(-33.69deg) scale(1,-0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:116.579px"></div> </div> </div> <div style="position:absolute;display:flex;height:298.999px;align-items:center;justify-content:center;left:353px;top:1465.39px;width:296.999px"> <div style="flex:none;transform:rotate(-146.31deg) skewX(33.69deg) scale(1,-0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:356.948px"></div> </div> </div> <div style="position:absolute;display:flex;height:265.667px;align-items:center;justify-content:center;left:256px;top:1364.38px;width:247px"> <div style="flex:none;transform:rotate(146.31deg) skewX(-33.69deg) scale(1,-0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:296.857px"></div> </div> </div> </div> <div style="position:absolute;display:contents;left:1005px;top:1641.38px"> <div style="position:absolute;display:flex;height:226.989px;align-items:center;justify-content:center;left:1005px;top:1642.65px;width:188.983px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(-33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:227.13px"></div> </div> </div> <div style="position:absolute;display:flex;height:229.783px;align-items:center;justify-content:center;left:1290.68px;top:1830.06px;width:189.983px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(-33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:103.128px;position:relative;width:228.331px"></div> </div> </div> <div style="position:absolute;display:flex;height:240.122px;align-items:center;justify-content:center;left:1082px;top:1819.72px;width:208.684px"> <div style="flex:none;transform:rotate(33.69deg) skewX(33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:250.806px"></div> </div> </div> <div style="position:absolute;display:flex;height:292.512px;align-items:center;justify-content:center;left:1193px;top:1641.38px;width:287.268px"> <div style="flex:none;transform:rotate(33.69deg) skewX(33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:345.253px"></div> </div> </div> <div style="position:absolute;display:flex;height:316.771px;align-items:center;justify-content:center;left:1005.3px;top:1642.47px;width:473.04px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(22.42deg) scale(1,0.92)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:341.699px;position:relative;width:227.609px"></div> </div> </div> </div> </div> <div style="position:absolute;display:contents;left:871.88px;top:1413.63px"> <div style="position:absolute;display:contents;left:920.26px;top:1448px"> <div style="position:absolute;display:flex;height:102.164px;align-items:center;justify-content:center;left:920.26px;top:1448.11px;width:16.684px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(-33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:91.042px;position:relative;width:20.052px"></div> </div> </div> <div style="position:absolute;display:flex;height:22.538px;align-items:center;justify-content:center;left:920.26px;top:1448.17px;width:33.68px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(22.42deg) scale(1,0.92)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:20.578px;position:relative;width:19.947px"></div> </div> </div> <div style="position:absolute;display:flex;height:102.326px;align-items:center;justify-content:center;left:936.94px;top:1459.24px;width:17.24px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(-33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:90.833px;position:relative;width:20.72px"></div> </div> </div> <div style="position:absolute;display:flex;height:102.025px;align-items:center;justify-content:center;left:920.26px;top:1459.05px;width:16.684px"> <div style="flex:none;transform:rotate(33.69deg) skewX(33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:90.902px;position:relative;width:20.052px"></div> </div> </div> <div style="position:absolute;display:flex;height:102.621px;align-items:center;justify-content:center;left:936.47px;top:1448px;width:17.578px"> <div style="flex:none;transform:rotate(33.69deg) skewX(33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:90.902px;position:relative;width:21.126px"></div> </div> </div> </div> <div style="position:absolute;display:flex;height:86.554px;align-items:center;justify-content:center;left:871.88px;top:1413.63px;width:129.344px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(22.42deg) scale(1,0.92)"> <div style="height:78.711px;position:relative;width:76.922px"> <div style="position:absolute;inset:-1.27% -1.3%"> <img style="display:block;max-width:none;width:100%;height:100%" src="data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9Ijc4LjkyMTciIGhlaWdodD0iODAuNzEwNiIgdmlld0JveD0iMCAwIDc4LjkyMTcgODAuNzEwNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggaWQ9IkVsbGlwc2UgMSIgZD0iTTM5LjQ2MDkgMC41QzYwLjk4OTIgMC41MDAwNDIgNzguNDIxOSAxOC4zNTQ5IDc4LjQyMTkgNDAuMzU1NUM3OC40MjE4IDYyLjM1NTkgNjAuOTg5MSA4MC4yMTA5IDM5LjQ2MDkgODAuMjEwOUMxNy45MzI3IDgwLjIxMDkgMC41MDAwODcgNjIuMzU2IDAuNSA0MC4zNTU1QzAuNSAxOC4zNTQ5IDE3LjkzMjcgMC41IDM5LjQ2MDkgMC41WiIgZmlsbD0id2hpdGUiIGZpbGwtb3BhY2l0eT0iMC4yOSIgc3Ryb2tlPSJ3aGl0ZSIvPgo8L3N2Zz4K" alt=""> </div> </div> </div> </div> </div> <div style="position:absolute;display:contents;left:785.76px;top:1355.22px"> <div style="position:absolute;display:contents;left:834.15px;top:1389.59px"> <div style="position:absolute;display:flex;height:102.164px;align-items:center;justify-content:center;left:834.15px;top:1389.7px;width:16.684px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(-33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:91.042px;position:relative;width:20.052px"></div> </div> </div> <div style="position:absolute;display:flex;height:22.538px;align-items:center;justify-content:center;left:834.15px;top:1389.76px;width:33.68px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(22.42deg) scale(1,0.92)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:20.578px;position:relative;width:19.947px"></div> </div> </div> <div style="position:absolute;display:flex;height:102.326px;align-items:center;justify-content:center;left:850.83px;top:1400.83px;width:17.24px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(-33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:90.833px;position:relative;width:20.72px"></div> </div> </div> <div style="position:absolute;display:flex;height:102.025px;align-items:center;justify-content:center;left:834.15px;top:1400.64px;width:16.684px"> <div style="flex:none;transform:rotate(33.69deg) skewX(33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:90.902px;position:relative;width:20.052px"></div> </div> </div> <div style="position:absolute;display:flex;height:102.621px;align-items:center;justify-content:center;left:850.36px;top:1389.59px;width:17.578px"> <div style="flex:none;transform:rotate(33.69deg) skewX(33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:90.902px;position:relative;width:21.126px"></div> </div> </div> </div> <div style="position:absolute;display:flex;height:86.554px;align-items:center;justify-content:center;left:785.76px;top:1355.22px;width:129.344px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(22.42deg) scale(1,0.92)"> <div style="height:78.711px;position:relative;width:76.922px"> <div style="position:absolute;inset:-1.27% -1.3%"> <img style="display:block;max-width:none;width:100%;height:100%" src="data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9Ijc4LjkyMTciIGhlaWdodD0iODAuNzEwNiIgdmlld0JveD0iMCAwIDc4LjkyMTcgODAuNzEwNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggaWQ9IkVsbGlwc2UgMSIgZD0iTTM5LjQ2MDkgMC41QzYwLjk4OTIgMC41MDAwNDIgNzguNDIxOSAxOC4zNTQ5IDc4LjQyMTkgNDAuMzU1NUM3OC40MjE4IDYyLjM1NTkgNjAuOTg5MSA4MC4yMTA5IDM5LjQ2MDkgODAuMjEwOUMxNy45MzI3IDgwLjIxMDkgMC41MDAwODcgNjIuMzU2IDAuNSA0MC4zNTU1QzAuNSAxOC4zNTQ5IDE3LjkzMjcgMC41IDM5LjQ2MDkgMC41WiIgZmlsbD0id2hpdGUiIGZpbGwtb3BhY2l0eT0iMC4yOSIgc3Ryb2tlPSJ3aGl0ZSIvPgo8L3N2Zz4K" alt=""> </div> </div> </div> </div> </div> <div style="position:absolute;display:contents;left:702.78px;top:1302px"> <div style="position:absolute;display:contents;left:751.17px;top:1336.37px"> <div style="position:absolute;display:flex;height:102.164px;align-items:center;justify-content:center;left:751.17px;top:1336.48px;width:16.684px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(-33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:91.042px;position:relative;width:20.052px"></div> </div> </div> <div style="position:absolute;display:flex;height:22.538px;align-items:center;justify-content:center;left:751.17px;top:1336.54px;width:33.68px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(22.42deg) scale(1,0.92)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:20.578px;position:relative;width:19.947px"></div> </div> </div> <div style="position:absolute;display:flex;height:102.326px;align-items:center;justify-content:center;left:767.85px;top:1347.61px;width:17.24px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(-33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:90.833px;position:relative;width:20.72px"></div> </div> </div> <div style="position:absolute;display:flex;height:102.025px;align-items:center;justify-content:center;left:751.17px;top:1347.42px;width:16.684px"> <div style="flex:none;transform:rotate(33.69deg) skewX(33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:90.902px;position:relative;width:20.052px"></div> </div> </div> <div style="position:absolute;display:flex;height:102.621px;align-items:center;justify-content:center;left:767.38px;top:1336.37px;width:17.578px"> <div style="flex:none;transform:rotate(33.69deg) skewX(33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:90.902px;position:relative;width:21.126px"></div> </div> </div> </div> <div style="position:absolute;display:flex;height:86.554px;align-items:center;justify-content:center;left:702.78px;top:1302px;width:129.344px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(22.42deg) scale(1,0.92)"> <div style="height:78.711px;position:relative;width:76.922px"> <div style="position:absolute;inset:-1.27% -1.3%"> <img style="display:block;max-width:none;width:100%;height:100%" src="data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9Ijc4LjkyMTciIGhlaWdodD0iODAuNzEwNiIgdmlld0JveD0iMCAwIDc4LjkyMTcgODAuNzEwNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggaWQ9IkVsbGlwc2UgMSIgZD0iTTM5LjQ2MDkgMC41QzYwLjk4OTIgMC41MDAwNDIgNzguNDIxOSAxOC4zNTQ5IDc4LjQyMTkgNDAuMzU1NUM3OC40MjE4IDYyLjM1NTkgNjAuOTg5MSA4MC4yMTA5IDM5LjQ2MDkgODAuMjEwOUMxNy45MzI3IDgwLjIxMDkgMC41MDAwODcgNjIuMzU2IDAuNSA0MC4zNTU1QzAuNSAxOC4zNTQ5IDE3LjkzMjcgMC41IDM5LjQ2MDkgMC41WiIgZmlsbD0id2hpdGUiIGZpbGwtb3BhY2l0eT0iMC4yOSIgc3Ryb2tlPSJ3aGl0ZSIvPgo8L3N2Zz4K" alt=""> </div> </div> </div> </div> </div> </div></div>
+                <div class="layer mini-pins"></div>
+              </div>
+              <!-- Floor 2 -->
+              <div class="layer level L2" data-level="2">
+                <div class="slab-box"><div class="slab"><img src="data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9Ijg2My4yNDEiIGhlaWdodD0iMTA0My4xMiIgdmlld0JveD0iMCAwIDg2My4yNDEgMTA0My4xMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggaWQ9ImZsb29yMiIgZD0iTTg2My4yNDEgMEgyMjQuNTA1VjU5NS4wMjlIMFYxMDQzLjEySDcxOC45NDdWNDc5LjcyOUg4NjMuMjQxVjBaIiBmaWxsPSIjMDFBNEY4Ii8+Cjwvc3ZnPgo=" alt=""><img class="tint" src="data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9Ijg2My4yNDEiIGhlaWdodD0iMTA0My4xMiIgdmlld0JveD0iMCAwIDg2My4yNDEgMTA0My4xMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggaWQ9ImZsb29yMSIgZD0iTTg2My4yNDEgMEgyMjQuNTA1VjU5NS4wMjlIMFYxMDQzLjEySDcxOC45NDdWNDc5LjcyOUg4NjMuMjQxVjBaIiBmaWxsPSIjQjNEMEZGIi8+Cjwvc3ZnPgo=" alt=""><div class="slab-hit" role="button" tabindex="-1" aria-label="Floor 2"></div></div></div>
+                <div class="layer furn"><div style="position:absolute;display:contents;left:253px;top:677px"> <div style="position:absolute;display:contents;left:253px;top:739.38px"> <div style="position:absolute;display:contents;left:535px;top:1281px"> <div style="position:absolute;display:flex;height:180.322px;align-items:center;justify-content:center;left:535px;top:1286.38px;width:118.983px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(-33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:143px"></div> </div> </div> <div style="position:absolute;display:flex;height:315.014px;align-items:center;justify-content:center;left:535px;top:1286.38px;width:469.902px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(22.42deg) scale(1,0.92)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:422.723px;position:relative;width:143px"></div> </div> </div> <div style="position:absolute;display:flex;height:180.322px;align-items:center;justify-content:center;left:886px;top:1520.38px;width:118.983px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(-33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:143px"></div> </div> </div> <div style="position:absolute;display:flex;height:335px;align-items:center;justify-content:center;left:535px;top:1365.38px;width:351px"> <div style="flex:none;transform:rotate(33.69deg) skewX(33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:421.849px"></div> </div> </div> <div style="position:absolute;display:flex;height:180.322px;align-items:center;justify-content:center;left:618px;top:1341.38px;width:118.983px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(-33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:143px"></div> </div> </div> <div style="position:absolute;display:flex;height:206.333px;align-items:center;justify-content:center;left:653px;top:1286.38px;width:158px"> <div style="flex:none;transform:rotate(33.69deg) skewX(33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:189.892px"></div> </div> </div> <div style="position:absolute;left:808px;width:100px;height:100px;top:1281px"></div> </div> <div style="position:absolute;display:contents;left:881px;top:1270.04px"> <div style="position:absolute;display:flex;height:182.334px;align-items:center;justify-content:center;left:1137px;top:1270.38px;width:122.001px"> <div style="flex:none;transform:rotate(-146.31deg) skewX(33.69deg) scale(1,-0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:146.627px"></div> </div> </div> <div style="position:absolute;display:flex;height:251.153px;align-items:center;justify-content:center;left:883.99px;top:1270.27px;width:374.844px"> <div style="flex:none;transform:rotate(-146.31deg) skewX(-22.42deg) scale(1,-0.92)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:304.419px;position:relative;width:146.787px"></div> </div> </div> <div style="position:absolute;display:flex;height:183.667px;align-items:center;justify-content:center;left:881px;top:1439.38px;width:124.001px"> <div style="flex:none;transform:rotate(-146.31deg) skewX(33.69deg) scale(1,-0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:149.03px"></div> </div> </div> <div style="position:absolute;display:flex;height:270.333px;align-items:center;justify-content:center;left:1005px;top:1351.37px;width:254px"> <div style="flex:none;transform:rotate(146.31deg) skewX(-33.69deg) scale(1,-0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:305.27px"></div> </div> </div> <div style="position:absolute;display:flex;height:235.667px;align-items:center;justify-content:center;left:936px;top:1270.04px;width:202px"> <div style="flex:none;transform:rotate(146.31deg) skewX(-33.69deg) scale(1,-0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:242.774px"></div> </div> </div> </div> <div style="position:absolute;display:contents;left:253px;top:739.38px"> <div style="position:absolute;display:flex;height:180.322px;align-items:center;justify-content:center;left:499.02px;top:739.38px;width:118.983px"> <div style="flex:none;transform:rotate(-146.31deg) skewX(33.69deg) scale(1,-0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:143px"></div> </div> </div> <div style="position:absolute;display:flex;height:244.34px;align-items:center;justify-content:center;left:253.32px;top:739.38px;width:364.677px"> <div style="flex:none;transform:rotate(-146.31deg) skewX(-22.42deg) scale(1,-0.92)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:295.967px;position:relative;width:143px"></div> </div> </div> <div style="position:absolute;display:flex;height:213.301px;align-items:center;justify-content:center;left:372.42px;top:918.57px;width:318.294px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(22.42deg) scale(1,0.92)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:267.442px;position:relative;width:115.714px"></div> </div> </div> <div style="position:absolute;display:flex;height:413.655px;align-items:center;justify-content:center;left:253.02px;top:903.39px;width:468.983px"> <div style="flex:none;transform:rotate(-146.31deg) skewX(33.69deg) scale(1,-0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:563.648px"></div> </div> </div> <div style="position:absolute;display:flex;height:201px;align-items:center;justify-content:center;left:468px;top:818.38px;width:150px"> <div style="flex:none;transform:rotate(146.31deg) skewX(-33.69deg) scale(1,-0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:180.278px"></div> </div> </div> <div style="position:absolute;display:flex;height:165.667px;align-items:center;justify-content:center;left:594px;top:1066.38px;width:97px"> <div style="flex:none;transform:rotate(146.31deg) skewX(-33.69deg) scale(1,-0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:116.579px"></div> </div> </div> <div style="position:absolute;display:flex;height:298.999px;align-items:center;justify-content:center;left:350px;top:840.39px;width:296.999px"> <div style="flex:none;transform:rotate(-146.31deg) skewX(33.69deg) scale(1,-0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:356.948px"></div> </div> </div> <div style="position:absolute;display:flex;height:265.667px;align-items:center;justify-content:center;left:253px;top:739.38px;width:247px"> <div style="flex:none;transform:rotate(146.31deg) skewX(-33.69deg) scale(1,-0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:296.857px"></div> </div> </div> </div> <div style="position:absolute;display:contents;left:1002px;top:1016.38px"> <div style="position:absolute;display:flex;height:226.989px;align-items:center;justify-content:center;left:1002px;top:1017.65px;width:188.983px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(-33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:227.13px"></div> </div> </div> <div style="position:absolute;display:flex;height:229.783px;align-items:center;justify-content:center;left:1287.68px;top:1205.06px;width:189.983px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(-33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:103.128px;position:relative;width:228.331px"></div> </div> </div> <div style="position:absolute;display:flex;height:240.122px;align-items:center;justify-content:center;left:1079px;top:1194.72px;width:208.684px"> <div style="flex:none;transform:rotate(33.69deg) skewX(33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:250.806px"></div> </div> </div> <div style="position:absolute;display:flex;height:292.512px;align-items:center;justify-content:center;left:1190px;top:1016.38px;width:287.268px"> <div style="flex:none;transform:rotate(33.69deg) skewX(33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:345.253px"></div> </div> </div> <div style="position:absolute;display:flex;height:316.771px;align-items:center;justify-content:center;left:1002.3px;top:1017.47px;width:473.04px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(22.42deg) scale(1,0.92)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:341.699px;position:relative;width:227.609px"></div> </div> </div> </div> </div> <div style="position:absolute;display:contents;left:868.88px;top:788.63px"> <div style="position:absolute;display:contents;left:917.26px;top:823px"> <div style="position:absolute;display:flex;height:102.164px;align-items:center;justify-content:center;left:917.26px;top:823.11px;width:16.684px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(-33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:91.042px;position:relative;width:20.052px"></div> </div> </div> <div style="position:absolute;display:flex;height:22.538px;align-items:center;justify-content:center;left:917.26px;top:823.17px;width:33.68px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(22.42deg) scale(1,0.92)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:20.578px;position:relative;width:19.947px"></div> </div> </div> <div style="position:absolute;display:flex;height:102.326px;align-items:center;justify-content:center;left:933.94px;top:834.24px;width:17.24px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(-33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:90.833px;position:relative;width:20.72px"></div> </div> </div> <div style="position:absolute;display:flex;height:102.025px;align-items:center;justify-content:center;left:917.26px;top:834.05px;width:16.684px"> <div style="flex:none;transform:rotate(33.69deg) skewX(33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:90.902px;position:relative;width:20.052px"></div> </div> </div> <div style="position:absolute;display:flex;height:102.621px;align-items:center;justify-content:center;left:933.47px;top:823px;width:17.578px"> <div style="flex:none;transform:rotate(33.69deg) skewX(33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:90.902px;position:relative;width:21.126px"></div> </div> </div> </div> <div style="position:absolute;display:flex;height:86.554px;align-items:center;justify-content:center;left:868.88px;top:788.63px;width:129.344px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(22.42deg) scale(1,0.92)"> <div style="height:78.711px;position:relative;width:76.922px"> <div style="position:absolute;inset:-1.27% -1.3%"> <img style="display:block;max-width:none;width:100%;height:100%" src="data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9Ijc4LjkyMTciIGhlaWdodD0iODAuNzEwNiIgdmlld0JveD0iMCAwIDc4LjkyMTcgODAuNzEwNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggaWQ9IkVsbGlwc2UgMSIgZD0iTTM5LjQ2MDkgMC41QzYwLjk4OTIgMC41MDAwNDIgNzguNDIxOSAxOC4zNTQ5IDc4LjQyMTkgNDAuMzU1NUM3OC40MjE4IDYyLjM1NTkgNjAuOTg5MSA4MC4yMTA5IDM5LjQ2MDkgODAuMjEwOUMxNy45MzI3IDgwLjIxMDkgMC41MDAwODcgNjIuMzU2IDAuNSA0MC4zNTU1QzAuNSAxOC4zNTQ5IDE3LjkzMjcgMC41IDM5LjQ2MDkgMC41WiIgZmlsbD0id2hpdGUiIGZpbGwtb3BhY2l0eT0iMC4yOSIgc3Ryb2tlPSJ3aGl0ZSIvPgo8L3N2Zz4K" alt=""> </div> </div> </div> </div> </div> <div style="position:absolute;display:contents;left:782.76px;top:730.22px"> <div style="position:absolute;display:contents;left:831.15px;top:764.59px"> <div style="position:absolute;display:flex;height:102.164px;align-items:center;justify-content:center;left:831.15px;top:764.7px;width:16.684px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(-33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:91.042px;position:relative;width:20.052px"></div> </div> </div> <div style="position:absolute;display:flex;height:22.538px;align-items:center;justify-content:center;left:831.15px;top:764.76px;width:33.68px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(22.42deg) scale(1,0.92)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:20.578px;position:relative;width:19.947px"></div> </div> </div> <div style="position:absolute;display:flex;height:102.326px;align-items:center;justify-content:center;left:847.83px;top:775.83px;width:17.24px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(-33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:90.833px;position:relative;width:20.72px"></div> </div> </div> <div style="position:absolute;display:flex;height:102.025px;align-items:center;justify-content:center;left:831.15px;top:775.64px;width:16.684px"> <div style="flex:none;transform:rotate(33.69deg) skewX(33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:90.902px;position:relative;width:20.052px"></div> </div> </div> <div style="position:absolute;display:flex;height:102.621px;align-items:center;justify-content:center;left:847.36px;top:764.59px;width:17.578px"> <div style="flex:none;transform:rotate(33.69deg) skewX(33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:90.902px;position:relative;width:21.126px"></div> </div> </div> </div> <div style="position:absolute;display:flex;height:86.554px;align-items:center;justify-content:center;left:782.76px;top:730.22px;width:129.344px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(22.42deg) scale(1,0.92)"> <div style="height:78.711px;position:relative;width:76.922px"> <div style="position:absolute;inset:-1.27% -1.3%"> <img style="display:block;max-width:none;width:100%;height:100%" src="data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9Ijc4LjkyMTciIGhlaWdodD0iODAuNzEwNiIgdmlld0JveD0iMCAwIDc4LjkyMTcgODAuNzEwNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggaWQ9IkVsbGlwc2UgMSIgZD0iTTM5LjQ2MDkgMC41QzYwLjk4OTIgMC41MDAwNDIgNzguNDIxOSAxOC4zNTQ5IDc4LjQyMTkgNDAuMzU1NUM3OC40MjE4IDYyLjM1NTkgNjAuOTg5MSA4MC4yMTA5IDM5LjQ2MDkgODAuMjEwOUMxNy45MzI3IDgwLjIxMDkgMC41MDAwODcgNjIuMzU2IDAuNSA0MC4zNTU1QzAuNSAxOC4zNTQ5IDE3LjkzMjcgMC41IDM5LjQ2MDkgMC41WiIgZmlsbD0id2hpdGUiIGZpbGwtb3BhY2l0eT0iMC4yOSIgc3Ryb2tlPSJ3aGl0ZSIvPgo8L3N2Zz4K" alt=""> </div> </div> </div> </div> </div> <div style="position:absolute;display:contents;left:699.78px;top:677px"> <div style="position:absolute;display:contents;left:748.17px;top:711.37px"> <div style="position:absolute;display:flex;height:102.164px;align-items:center;justify-content:center;left:748.17px;top:711.48px;width:16.684px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(-33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:91.042px;position:relative;width:20.052px"></div> </div> </div> <div style="position:absolute;display:flex;height:22.538px;align-items:center;justify-content:center;left:748.17px;top:711.54px;width:33.68px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(22.42deg) scale(1,0.92)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:20.578px;position:relative;width:19.947px"></div> </div> </div> <div style="position:absolute;display:flex;height:102.326px;align-items:center;justify-content:center;left:764.85px;top:722.61px;width:17.24px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(-33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:90.833px;position:relative;width:20.72px"></div> </div> </div> <div style="position:absolute;display:flex;height:102.025px;align-items:center;justify-content:center;left:748.17px;top:722.42px;width:16.684px"> <div style="flex:none;transform:rotate(33.69deg) skewX(33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:90.902px;position:relative;width:20.052px"></div> </div> </div> <div style="position:absolute;display:flex;height:102.621px;align-items:center;justify-content:center;left:764.38px;top:711.37px;width:17.578px"> <div style="flex:none;transform:rotate(33.69deg) skewX(33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:90.902px;position:relative;width:21.126px"></div> </div> </div> </div> <div style="position:absolute;display:flex;height:86.554px;align-items:center;justify-content:center;left:699.78px;top:677px;width:129.344px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(22.42deg) scale(1,0.92)"> <div style="height:78.711px;position:relative;width:76.922px"> <div style="position:absolute;inset:-1.27% -1.3%"> <img style="display:block;max-width:none;width:100%;height:100%" src="data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9Ijc4LjkyMTciIGhlaWdodD0iODAuNzEwNiIgdmlld0JveD0iMCAwIDc4LjkyMTcgODAuNzEwNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggaWQ9IkVsbGlwc2UgMSIgZD0iTTM5LjQ2MDkgMC41QzYwLjk4OTIgMC41MDAwNDIgNzguNDIxOSAxOC4zNTQ5IDc4LjQyMTkgNDAuMzU1NUM3OC40MjE4IDYyLjM1NTkgNjAuOTg5MSA4MC4yMTA5IDM5LjQ2MDkgODAuMjEwOUMxNy45MzI3IDgwLjIxMDkgMC41MDAwODcgNjIuMzU2IDAuNSA0MC4zNTU1QzAuNSAxOC4zNTQ5IDE3LjkzMjcgMC41IDM5LjQ2MDkgMC41WiIgZmlsbD0id2hpdGUiIGZpbGwtb3BhY2l0eT0iMC4yOSIgc3Ryb2tlPSJ3aGl0ZSIvPgo8L3N2Zz4K" alt=""> </div> </div> </div> </div> </div> </div></div>
+                <div class="layer mini-pins"></div>
+              </div>
+              <!-- Floor 3 (top) -->
+              <div class="layer level L3" data-level="3">
+                <div class="slab-box"><div class="slab"><img src="data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9Ijg2My4yNDEiIGhlaWdodD0iMTA0My4xMiIgdmlld0JveD0iMCAwIDg2My4yNDEgMTA0My4xMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggaWQ9ImZsb29yMSIgZD0iTTg2My4yNDEgMEgyMjQuNTA1VjU5NS4wMjlIMFYxMDQzLjEySDcxOC45NDdWNDc5LjcyOUg4NjMuMjQxVjBaIiBmaWxsPSIjQjNEMEZGIi8+Cjwvc3ZnPgo=" alt=""><img class="tint" src="data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9Ijg2My4yNDEiIGhlaWdodD0iMTA0My4xMiIgdmlld0JveD0iMCAwIDg2My4yNDEgMTA0My4xMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggaWQ9ImZsb29yMSIgZD0iTTg2My4yNDEgMEgyMjQuNTA1VjU5NS4wMjlIMFYxMDQzLjEySDcxOC45NDdWNDc5LjcyOUg4NjMuMjQxVjBaIiBmaWxsPSIjQjNEMEZGIi8+Cjwvc3ZnPgo=" alt=""><div class="slab-hit" role="button" tabindex="-1" aria-label="Floor 3"></div></div></div>
+                <div class="layer furn"><div style="position:absolute;display:contents;left:245px;top:50.61px"> <div style="position:absolute;display:contents;left:245px;top:113px"> <div style="position:absolute;display:contents;left:527px;top:660px"> <div style="position:absolute;display:flex;height:180.322px;align-items:center;justify-content:center;left:527px;top:660px;width:118.983px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(-33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:143px"></div> </div> </div> <div style="position:absolute;display:flex;height:315.014px;align-items:center;justify-content:center;left:527px;top:660px;width:469.902px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(22.42deg) scale(1,0.92)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:422.723px;position:relative;width:143px"></div> </div> </div> <div style="position:absolute;display:flex;height:180.322px;align-items:center;justify-content:center;left:878px;top:894px;width:118.983px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(-33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:143px"></div> </div> </div> <div style="position:absolute;display:flex;height:335px;align-items:center;justify-content:center;left:527px;top:739px;width:351px"> <div style="flex:none;transform:rotate(33.69deg) skewX(33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:421.849px"></div> </div> </div> <div style="position:absolute;display:flex;height:180.322px;align-items:center;justify-content:center;left:610px;top:715px;width:118.983px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(-33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:143px"></div> </div> </div> <div style="position:absolute;display:flex;height:206.333px;align-items:center;justify-content:center;left:645px;top:660px;width:158px"> <div style="flex:none;transform:rotate(33.69deg) skewX(33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:189.892px"></div> </div> </div> </div> <div style="position:absolute;display:contents;left:873px;top:643.65px"> <div style="position:absolute;display:flex;height:182.334px;align-items:center;justify-content:center;left:1129px;top:644px;width:122.001px"> <div style="flex:none;transform:rotate(-146.31deg) skewX(33.69deg) scale(1,-0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:146.627px"></div> </div> </div> <div style="position:absolute;display:flex;height:251.153px;align-items:center;justify-content:center;left:875.99px;top:643.89px;width:374.844px"> <div style="flex:none;transform:rotate(-146.31deg) skewX(-22.42deg) scale(1,-0.92)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:304.419px;position:relative;width:146.787px"></div> </div> </div> <div style="position:absolute;display:flex;height:183.667px;align-items:center;justify-content:center;left:873px;top:813px;width:124.001px"> <div style="flex:none;transform:rotate(-146.31deg) skewX(33.69deg) scale(1,-0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:149.03px"></div> </div> </div> <div style="position:absolute;display:flex;height:270.333px;align-items:center;justify-content:center;left:997px;top:724.99px;width:254px"> <div style="flex:none;transform:rotate(146.31deg) skewX(-33.69deg) scale(1,-0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:305.27px"></div> </div> </div> <div style="position:absolute;display:flex;height:235.667px;align-items:center;justify-content:center;left:928px;top:643.65px;width:202px"> <div style="flex:none;transform:rotate(146.31deg) skewX(-33.69deg) scale(1,-0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:242.774px"></div> </div> </div> </div> <div style="position:absolute;display:contents;left:245px;top:113px"> <div style="position:absolute;display:flex;height:180.322px;align-items:center;justify-content:center;left:491.02px;top:113px;width:118.983px"> <div style="flex:none;transform:rotate(-146.31deg) skewX(33.69deg) scale(1,-0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:143px"></div> </div> </div> <div style="position:absolute;display:flex;height:244.34px;align-items:center;justify-content:center;left:245.32px;top:113px;width:364.677px"> <div style="flex:none;transform:rotate(-146.31deg) skewX(-22.42deg) scale(1,-0.92)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:295.967px;position:relative;width:143px"></div> </div> </div> <div style="position:absolute;display:flex;height:213.301px;align-items:center;justify-content:center;left:364.42px;top:292.19px;width:318.294px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(22.42deg) scale(1,0.92)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:267.442px;position:relative;width:115.714px"></div> </div> </div> <div style="position:absolute;display:flex;height:413.655px;align-items:center;justify-content:center;left:245.02px;top:277px;width:468.983px"> <div style="flex:none;transform:rotate(-146.31deg) skewX(33.69deg) scale(1,-0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:563.648px"></div> </div> </div> <div style="position:absolute;display:flex;height:201px;align-items:center;justify-content:center;left:460px;top:192px;width:150px"> <div style="flex:none;transform:rotate(146.31deg) skewX(-33.69deg) scale(1,-0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:180.278px"></div> </div> </div> <div style="position:absolute;display:flex;height:165.667px;align-items:center;justify-content:center;left:586px;top:440px;width:97px"> <div style="flex:none;transform:rotate(146.31deg) skewX(-33.69deg) scale(1,-0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:116.579px"></div> </div> </div> <div style="position:absolute;display:flex;height:298.999px;align-items:center;justify-content:center;left:342px;top:214px;width:296.999px"> <div style="flex:none;transform:rotate(-146.31deg) skewX(33.69deg) scale(1,-0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:356.948px"></div> </div> </div> <div style="position:absolute;display:flex;height:265.667px;align-items:center;justify-content:center;left:245px;top:113px;width:247px"> <div style="flex:none;transform:rotate(146.31deg) skewX(-33.69deg) scale(1,-0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:296.857px"></div> </div> </div> </div> <div style="position:absolute;display:contents;left:994px;top:390px"> <div style="position:absolute;display:flex;height:226.989px;align-items:center;justify-content:center;left:994px;top:391.27px;width:188.983px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(-33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:227.13px"></div> </div> </div> <div style="position:absolute;display:flex;height:229.783px;align-items:center;justify-content:center;left:1279.68px;top:578.67px;width:189.983px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(-33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:103.128px;position:relative;width:228.331px"></div> </div> </div> <div style="position:absolute;display:flex;height:240.122px;align-items:center;justify-content:center;left:1071px;top:568.33px;width:208.684px"> <div style="flex:none;transform:rotate(33.69deg) skewX(33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:250.806px"></div> </div> </div> <div style="position:absolute;display:flex;height:292.512px;align-items:center;justify-content:center;left:1182px;top:390px;width:287.268px"> <div style="flex:none;transform:rotate(33.69deg) skewX(33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:101px;position:relative;width:345.253px"></div> </div> </div> <div style="position:absolute;display:flex;height:316.771px;align-items:center;justify-content:center;left:994.3px;top:391.08px;width:473.04px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(22.42deg) scale(1,0.92)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:341.699px;position:relative;width:227.609px"></div> </div> </div> </div> </div> <div style="position:absolute;display:contents;left:860.88px;top:162.25px"> <div style="position:absolute;display:contents;left:909.26px;top:196.62px"> <div style="position:absolute;display:flex;height:102.164px;align-items:center;justify-content:center;left:909.26px;top:196.73px;width:16.684px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(-33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:91.042px;position:relative;width:20.052px"></div> </div> </div> <div style="position:absolute;display:flex;height:22.538px;align-items:center;justify-content:center;left:909.26px;top:196.78px;width:33.68px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(22.42deg) scale(1,0.92)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:20.578px;position:relative;width:19.947px"></div> </div> </div> <div style="position:absolute;display:flex;height:102.326px;align-items:center;justify-content:center;left:925.94px;top:207.86px;width:17.24px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(-33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:90.833px;position:relative;width:20.72px"></div> </div> </div> <div style="position:absolute;display:flex;height:102.025px;align-items:center;justify-content:center;left:909.26px;top:207.67px;width:16.684px"> <div style="flex:none;transform:rotate(33.69deg) skewX(33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:90.902px;position:relative;width:20.052px"></div> </div> </div> <div style="position:absolute;display:flex;height:102.621px;align-items:center;justify-content:center;left:925.47px;top:196.62px;width:17.578px"> <div style="flex:none;transform:rotate(33.69deg) skewX(33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:90.902px;position:relative;width:21.126px"></div> </div> </div> </div> <div style="position:absolute;display:flex;height:86.554px;align-items:center;justify-content:center;left:860.88px;top:162.25px;width:129.344px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(22.42deg) scale(1,0.92)"> <div style="height:78.711px;position:relative;width:76.922px"> <div style="position:absolute;inset:-1.27% -1.3%"> <img style="display:block;max-width:none;width:100%;height:100%" src="data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9Ijc4LjkyMTciIGhlaWdodD0iODAuNzEwNiIgdmlld0JveD0iMCAwIDc4LjkyMTcgODAuNzEwNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggaWQ9IkVsbGlwc2UgMSIgZD0iTTM5LjQ2MDkgMC41QzYwLjk4OTIgMC41MDAwNDIgNzguNDIxOSAxOC4zNTQ5IDc4LjQyMTkgNDAuMzU1NUM3OC40MjE4IDYyLjM1NTkgNjAuOTg5MSA4MC4yMTA5IDM5LjQ2MDkgODAuMjEwOUMxNy45MzI3IDgwLjIxMDkgMC41MDAwODcgNjIuMzU2IDAuNSA0MC4zNTU1QzAuNSAxOC4zNTQ5IDE3LjkzMjcgMC41IDM5LjQ2MDkgMC41WiIgZmlsbD0id2hpdGUiIGZpbGwtb3BhY2l0eT0iMC4yOSIgc3Ryb2tlPSJ3aGl0ZSIvPgo8L3N2Zz4K" alt=""> </div> </div> </div> </div> </div> <div style="position:absolute;display:contents;left:774.76px;top:103.83px"> <div style="position:absolute;display:contents;left:823.15px;top:138.21px"> <div style="position:absolute;display:flex;height:102.164px;align-items:center;justify-content:center;left:823.15px;top:138.32px;width:16.684px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(-33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:91.042px;position:relative;width:20.052px"></div> </div> </div> <div style="position:absolute;display:flex;height:22.538px;align-items:center;justify-content:center;left:823.15px;top:138.37px;width:33.68px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(22.42deg) scale(1,0.92)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:20.578px;position:relative;width:19.947px"></div> </div> </div> <div style="position:absolute;display:flex;height:102.326px;align-items:center;justify-content:center;left:839.83px;top:149.44px;width:17.24px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(-33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:90.833px;position:relative;width:20.72px"></div> </div> </div> <div style="position:absolute;display:flex;height:102.025px;align-items:center;justify-content:center;left:823.15px;top:149.26px;width:16.684px"> <div style="flex:none;transform:rotate(33.69deg) skewX(33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:90.902px;position:relative;width:20.052px"></div> </div> </div> <div style="position:absolute;display:flex;height:102.621px;align-items:center;justify-content:center;left:839.36px;top:138.21px;width:17.578px"> <div style="flex:none;transform:rotate(33.69deg) skewX(33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:90.902px;position:relative;width:21.126px"></div> </div> </div> </div> <div style="position:absolute;display:flex;height:86.554px;align-items:center;justify-content:center;left:774.76px;top:103.83px;width:129.344px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(22.42deg) scale(1,0.92)"> <div style="height:78.711px;position:relative;width:76.922px"> <div style="position:absolute;inset:-1.27% -1.3%"> <img style="display:block;max-width:none;width:100%;height:100%" src="data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9Ijc4LjkyMTciIGhlaWdodD0iODAuNzEwNiIgdmlld0JveD0iMCAwIDc4LjkyMTcgODAuNzEwNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggaWQ9IkVsbGlwc2UgMSIgZD0iTTM5LjQ2MDkgMC41QzYwLjk4OTIgMC41MDAwNDIgNzguNDIxOSAxOC4zNTQ5IDc4LjQyMTkgNDAuMzU1NUM3OC40MjE4IDYyLjM1NTkgNjAuOTg5MSA4MC4yMTA5IDM5LjQ2MDkgODAuMjEwOUMxNy45MzI3IDgwLjIxMDkgMC41MDAwODcgNjIuMzU2IDAuNSA0MC4zNTU1QzAuNSAxOC4zNTQ5IDE3LjkzMjcgMC41IDM5LjQ2MDkgMC41WiIgZmlsbD0id2hpdGUiIGZpbGwtb3BhY2l0eT0iMC4yOSIgc3Ryb2tlPSJ3aGl0ZSIvPgo8L3N2Zz4K" alt=""> </div> </div> </div> </div> </div> <div style="position:absolute;display:contents;left:691.78px;top:50.61px"> <div style="position:absolute;display:contents;left:740.17px;top:84.99px"> <div style="position:absolute;display:flex;height:102.164px;align-items:center;justify-content:center;left:740.17px;top:85.1px;width:16.684px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(-33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:91.042px;position:relative;width:20.052px"></div> </div> </div> <div style="position:absolute;display:flex;height:22.538px;align-items:center;justify-content:center;left:740.17px;top:85.15px;width:33.68px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(22.42deg) scale(1,0.92)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:20.578px;position:relative;width:19.947px"></div> </div> </div> <div style="position:absolute;display:flex;height:102.326px;align-items:center;justify-content:center;left:756.85px;top:96.22px;width:17.24px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(-33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:90.833px;position:relative;width:20.72px"></div> </div> </div> <div style="position:absolute;display:flex;height:102.025px;align-items:center;justify-content:center;left:740.17px;top:96.04px;width:16.684px"> <div style="flex:none;transform:rotate(33.69deg) skewX(33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:90.902px;position:relative;width:20.052px"></div> </div> </div> <div style="position:absolute;display:flex;height:102.621px;align-items:center;justify-content:center;left:756.38px;top:84.99px;width:17.578px"> <div style="flex:none;transform:rotate(33.69deg) skewX(33.69deg) scale(1,0.83)"> <div style="background:rgba(255,255,255,0.29);border-width:1px;border-style:solid;border-color:#fff;height:90.902px;position:relative;width:21.126px"></div> </div> </div> </div> <div style="position:absolute;display:flex;height:86.554px;align-items:center;justify-content:center;left:691.78px;top:50.62px;width:129.344px"> <div style="flex:none;transform:rotate(-33.69deg) skewX(22.42deg) scale(1,0.92)"> <div style="height:78.711px;position:relative;width:76.922px"> <div style="position:absolute;inset:-1.27% -1.3%"> <img style="display:block;max-width:none;width:100%;height:100%" src="data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9Ijc4LjkyMTciIGhlaWdodD0iODAuNzEwNiIgdmlld0JveD0iMCAwIDc4LjkyMTcgODAuNzEwNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggaWQ9IkVsbGlwc2UgMSIgZD0iTTM5LjQ2MDkgMC41QzYwLjk4OTIgMC41MDAwNDIgNzguNDIxOSAxOC4zNTQ5IDc4LjQyMTkgNDAuMzU1NUM3OC40MjE4IDYyLjM1NTkgNjAuOTg5MSA4MC4yMTA5IDM5LjQ2MDkgODAuMjEwOUMxNy45MzI3IDgwLjIxMDkgMC41MDAwODcgNjIuMzU2IDAuNSA0MC4zNTU1QzAuNSAxOC4zNTQ5IDE3LjkzMjcgMC41IDM5LjQ2MDkgMC41WiIgZmlsbD0id2hpdGUiIGZpbGwtb3BhY2l0eT0iMC4yOSIgc3Ryb2tlPSJ3aGl0ZSIvPgo8L3N2Zz4K" alt=""> </div> </div> </div> </div> </div> </div></div>
+                <div class="layer mini-pins"></div>
+              </div>
+              <!-- Roof -->
+              <div class="layer roof">
+                <div class="slab-box"><div class="slab"><img src="data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9Ijg2My4yNDEiIGhlaWdodD0iMTA0My4xMiIgdmlld0JveD0iMCAwIDg2My4yNDEgMTA0My4xMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggaWQ9ImZsb29yMSIgZD0iTTg2My4yNDEgMEgyMjQuNTA1VjU5NS4wMjlIMFYxMDQzLjEySDcxOC45NDdWNDc5LjcyOUg4NjMuMjQxVjBaIiBmaWxsPSJ3aGl0ZSIgZmlsbC1vcGFjaXR5PSIwLjUyIi8+Cjwvc3ZnPgo=" alt=""></div></div>
+              </div>
+
+              <!-- front glass walls -->
+              <div class="layer glass" style="--dx:-745.57px;--dy:430.18px">
+                <div class="gw" style="left:235.17px;top:739.79px;width:493.744px;height:765.848px"><div class="tR" style="width:593.407px;height:436.686px"><img src="data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9IjU5NC40MDciIGhlaWdodD0iNDM3LjY4NiIgdmlld0JveD0iMCAwIDU5NC40MDcgNDM3LjY4NiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggaWQ9ImdsYXNzMDYiIGQ9Ik0wLjUgMC41SDU5My45MDdWNDM3LjE4NkMzNjIuMTY3IDQzNy4xODYgMjMyLjI0IDQzNy4xODYgMC41IDQzNy4xODZWMC41WiIgZmlsbD0iI0M3QzdDNyIgZmlsbC1vcGFjaXR5PSIwLjEyIiBzdHJva2U9ImJsYWNrIi8+Cjwvc3ZnPgo=" alt="" style="left:0;top:-0.11%;width:100%;height:100.22%"></div></div>
+              </div>
+              <div class="layer glass" style="--dx:645.1px;--dy:333.35px">
+                <div class="gw" style="left:1044.9px;top:651.72px;width:119.266px;height:187.907px"><div class="tL" style="width:143.34px;height:108.396px"><img src="data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9IjE0NC4zNCIgaGVpZ2h0PSIxMDkuMzk2IiB2aWV3Qm94PSIwIDAgMTQ0LjM0IDEwOS4zOTYiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxwYXRoIGlkPSJnbGFzczA1IiBkPSJNMC41MDAwMDMgMC41TDE0My44MzkgMC41TDE0My44NCAxMDguODk2SDAuNTAwNzEyTDAuNTAwMDAzIDAuNVoiIGZpbGw9IiNDN0M3QzciIGZpbGwtb3BhY2l0eT0iMC4xMiIgc3Ryb2tlPSJibGFjayIvPgo8L3N2Zz4K" alt="" style="left:-0.35%;top:-0.46%;width:100.7%;height:100.92%"></div></div>
+              </div>
+              <div class="layer glass" style="--dx:786.83px;--dy:531.47px">
+                <div class="gw" style="left:915.17px;top:1047.6px;width:597px;height:834.601px"><div class="tL pane" style="width:717.505px;height:436.601px"></div></div>
+              </div>
+              <div class="layer glass" style="--dx:-758.17px;--dy:-452.86px">
+                <div class="gw" style="left:542.17px;top:1069.93px;width:186.105px;height:564.16px"><div class="tL pane" style="width:223.671px;height:440.09px"></div></div>
+              </div>
+              <div class="layer glass" style="--dx:-927.17px;--dy:490.58px">
+                <div class="gw" style="left:542.17px;top:1197.49px;width:373px;height:685.352px"><div class="tR pane" style="width:448.29px;height:436.686px"></div></div>
+              </div>
+              <div class="layer glass" style="--dx:0px;--dy:-260px">
+                <img class="abs" src="data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9IjEyMC43OTQiIGhlaWdodD0iMTg4LjkwOSIgdmlld0JveD0iMCAwIDEyMC43OTQgMTg4LjkwOSIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGcgaWQ9ImdsYXNzMDEiPgo8cGF0aCBkPSJNODIuODY0OCA1NC4zNTIzTDAuNSAwLjkyMDM1NlYxMDkuMDVMODIuODY0OCA1NC4zNTIzWiIgZmlsbD0iI0M3QzdDNyIgZmlsbC1vcGFjaXR5PSIwLjEyIi8+CjxwYXRoIGQ9Ik0xMjAuMjk0IDE4OC45MDlWNzkuMjY3N0w4Mi44NjQ4IDU0LjM1MjNNODIuODY0OCA1NC4zNTIzTDAuNSAwLjkyMDM1NlYxMDkuMDVMODIuODY0OCA1NC4zNTIzWiIgc3Ryb2tlPSJibGFjayIvPgo8L2c+Cjwvc3ZnPgo=" alt="" style="left:1044.42px;top:730.75px;width:120.794px;height:188.909px">
+                <img class="abs" src="data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9IjI5NS43OTMiIGhlaWdodD0iMjIwLjQzOSIgdmlld0JveD0iMCAwIDI5NS43OTMgMjIwLjQzOSIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGcgaWQ9ImNvdmVyIj4KPHBhdGggaWQ9ImNvdmVyXzIiIGQ9Ik0xODYuNjU1IDk1LjQyMTlMMTIzLjUzMyA1Mi44ODY3TDAgMTM2Ljg3N0wxMjQuMzc2IDIyMC40MzlMMTg2LjY1NSAxOTAuNjhMMjE0LjQyNiAxMTYuNTM0TDE4Ni42NTUgOTUuNDIxOVoiIGZpbGw9IiMzM0E1RTAiLz4KPHBhdGggaWQ9ImNvdmVyXzMiIGQ9Ik0xMjMuNTQ1IDUyLjg4MjJMMjAxLjE4NiAwTDI5NS43OTMgMTA2Ljk0MkwyNDYuODEgMTM2LjY2NkwxMjMuNTQ1IDUyLjg4MjJaIiBmaWxsPSIjQkZDREU0Ii8+CjwvZz4KPC9zdmc+Cg==" alt="" style="left:541.51px;top:1331.8px;width:295.793px;height:220.439px">
+              </div>
+
+              <div class="building-hit" role="button" tabindex="0" aria-label="Explore the building"></div>
+            </div>
+          </div>
+
+          <!-- Floor rail (exploded labels) -->
+          <div class="rail" aria-label="Floors">
+            <button data-go="3" style="--i:0">3</button>
+            <button data-go="2" style="--i:1">2</button>
+            <button data-go="1" style="--i:2">1</button>
+          </div>
+
+          <!-- Floor plan -->
+          <div class="plan" aria-hidden="true">
+            <div class="plan-bg">
+              <img class="plan-building" src="data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9IjI4MzYuODMiIGhlaWdodD0iMzQ5MC4zOCIgdmlld0JveD0iMCAwIDI4MzYuODMgMzQ5MC4zOCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGcgaWQ9ImJ1aWxkaW5nIj4KPHBhdGggaWQ9ImZsb29yMSIgZD0iTTIxMTkuNDIgMTM2Ni45M0gxMDIyLjFWMjM4OS4xNUg2MzYuNDE2VjMxNTguOTNIMTg3MS41M1YyMTkxLjA3SDIxMTkuNDJWMTM2Ni45M1oiIGZpbGw9IiNCM0QwRkYiLz4KPHBhdGggaWQ9IlJlY3RhbmdsZSAyOSIgZD0iTTIyNDAuNDIgMTQxNy42OEwyNjM4LjMxIDE2ODYuMDFMMjYzNy40MiAxMjQ1LjY2TDIyNDAuNDIgOTgwLjk5N1YxNDE3LjY4WiIgZmlsbD0id2hpdGUiIGZpbGwtb3BhY2l0eT0iMC41MiIgc3Ryb2tlPSJibGFjayIvPgo8cmVjdCBpZD0iUmVjdGFuZ2xlIDI4IiB3aWR0aD0iNjM5LjM4NCIgaGVpZ2h0PSI0MzYuNjAxIiB0cmFuc2Zvcm09Im1hdHJpeCgwLjgzMjA1IC0wLjU1NDcgMCAxIDAuNDE2MDI1IDEzMTIuNjYpIiBmaWxsPSJ3aGl0ZSIgZmlsbC1vcGFjaXR5PSIwLjUyIiBzdHJva2U9ImJsYWNrIi8+CjxwYXRoIGlkPSJSZWN0YW5nbGUgMzIiIGQ9Ik0yMjM4LjQyIDE4OTQuMDRMMjcwNS4yMSAyMjA3LjY3VjE3NzEuMTZMMjIzOC40MiAxNDUzTDIyMzguNDIgMTg5NC4wNFoiIGZpbGw9IndoaXRlIiBmaWxsLW9wYWNpdHk9IjAuNTIiIHN0cm9rZT0iYmxhY2siLz4KPHBhdGggaWQ9ImZsb29yMV8yIiBkPSJNMTI3OS4zNCA4LjY4NDRlLTA2TDc0Ny44OCAzNTQuMzA3TDEyNDEuODQgNjg2LjA2OUwxMDU1LjA0IDgxMC42MDJMMTQyNy4wMSAxMDYwLjQ0TDIwMjUuMjEgNjYxLjYzNkwxNTU3LjUyIDM0Ny41MTZMMTY3Ny41OCAyNjcuNDc2TDEyNzkuMzQgOC42ODQ0ZS0wNloiIGZpbGw9IndoaXRlIiBmaWxsLW9wYWNpdHk9IjAuNTIiLz4KPHBhdGggaWQ9IlJlY3RhbmdsZSAzMyIgZD0iTTI3LjAxMTcgMjY4Mi41OUw1MjAuNzU2IDMwMTEuNzVWMjU3NS4wNkMzMjcuOTM3IDI0NDYuNTIgMjE5LjgzMSAyMzc0LjQ1IDI3LjAxMTcgMjI0NS45VjI2ODIuNTlaIiBmaWxsPSJ3aGl0ZSIgZmlsbC1vcGFjaXR5PSIwLjUyIiBzdHJva2U9ImJsYWNrIi8+CjxwYXRoIGlkPSJSZWN0YW5nbGUgMzAiIGQ9Ik0yMjI3LjQyIDIxNDAuNTFMMjM0Ni42OCAyMDYxTDIzNDYuNjggMjE2OS4zOUwyMjI3LjQyIDIyNDguOUwyMjI3LjQyIDIxNDAuNTFaIiBmaWxsPSJ3aGl0ZSIgZmlsbC1vcGFjaXR5PSIwLjUyIiBzdHJva2U9ImJsYWNrIi8+CjxyZWN0IGlkPSJSZWN0YW5nbGUgMjMiIHdpZHRoPSI3MTcuNTA1IiBoZWlnaHQ9IjQzNi42MDEiIHRyYW5zZm9ybT0ibWF0cml4KDAuODMyMDUgLTAuNTU0NyAwIDEgMjIzOS40MiAzMDUzKSIgZmlsbD0id2hpdGUiIGZpbGwtb3BhY2l0eT0iMC41MiIgc3Ryb2tlPSJibGFjayIvPgo8cmVjdCBpZD0iUmVjdGFuZ2xlIDM0IiB3aWR0aD0iMjIzLjY3MSIgaGVpZ2h0PSI0NDAuMDkiIHRyYW5zZm9ybT0ibWF0cml4KDAuODMyMDUgLTAuNTU0NyAwIDEgMzIxLjQxNiAxODE3LjA3KSIgZmlsbD0id2hpdGUiIGZpbGwtb3BhY2l0eT0iMC41MiIgc3Ryb2tlPSJibGFjayIvPgo8cmVjdCBpZD0iUmVjdGFuZ2xlIDI0IiB3aWR0aD0iNDQ4LjI5IiBoZWlnaHQ9IjQzNi42ODYiIHRyYW5zZm9ybT0ibWF0cml4KDAuODMyMDUgMC41NTQ3IDAgLTEgMTUyLjQxNiAzMjAwLjY4KSIgZmlsbD0id2hpdGUiIGZpbGwtb3BhY2l0eT0iMC41MiIgc3Ryb2tlPSJibGFjayIvPgo8L2c+Cjwvc3ZnPgo=" alt="">
+            </div>
+            <div class="content" id="planContent">
+              <div class="rooms"><img src="data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9IjEzOTYuMjgiIGhlaWdodD0iMTc2My45IiB2aWV3Qm94PSIwIDAgMTM5Ni4yOCAxNzYzLjkiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGlkPSJHcm91cCAxNSI+CjxnIGlkPSJVbmlvbiIgZmlsdGVyPSJ1cmwoI2ZpbHRlcjBfZF8wXzI2MykiPgo8cGF0aCBkPSJNMTA0Ny43OSAyNS41QzEwNTMuMzIgMjUuNSAxMDU3Ljc5IDI5Ljk3NzIgMTA1Ny43OSAzNS41VjI2OC4xNjhDMTA1Ny43OSAyNzMuNjkxIDEwNTMuMzIgMjc4LjE2OCAxMDQ3Ljc5IDI3OC4xNjhINjc4Ljc5M1Y4ODguNDU1QzY3OC43OTMgODkzLjk3OCA2NzQuMzE2IDg5OC40NTUgNjY4Ljc5MyA4OTguNDU1SDQzNi4xMjVDNDMwLjYwMiA4OTguNDU1IDQyNi4xMjUgODkzLjk3OCA0MjYuMTI1IDg4OC40NTVWMjc2Ljc4NkM0MjYuMTI1IDI3NS4yNDMgNDI2LjQ3NiAyNzMuNzgyIDQyNy4xIDI3Mi40NzdDNDI2LjQ3NiAyNzEuMTcyIDQyNi4xMjUgMjY5LjcxMSA0MjYuMTI1IDI2OC4xNjhWMzUuNUM0MjYuMTI1IDI5Ljk3NzIgNDMwLjYwMiAyNS41IDQzNi4xMjUgMjUuNUgxMDQ3Ljc5WiIgZmlsbD0id2hpdGUiIGZpbGwtb3BhY2l0eT0iMC4zNiIgc2hhcGUtcmVuZGVyaW5nPSJjcmlzcEVkZ2VzIi8+CjwvZz4KPGcgaWQ9IkVsbGlwc2UgMTMxIiBmaWx0ZXI9InVybCgjZmlsdGVyMV9kXzBfMjYzKSI+CjxjaXJjbGUgY3g9IjEzMTIuMTciIGN5PSIxNTguMDk0IiByPSI1OC42MTQ0IiBmaWxsPSJ3aGl0ZSIgZmlsbC1vcGFjaXR5PSIwLjM2IiBzaGFwZS1yZW5kZXJpbmc9ImNyaXNwRWRnZXMiLz4KPC9nPgo8ZyBpZD0iRWxsaXBzZSAxMzIiIGZpbHRlcj0idXJsKCNmaWx0ZXIyX2RfMF8yNjMpIj4KPGNpcmNsZSBjeD0iMTMxMi4xNyIgY3k9IjM2OS43ODgiIHI9IjU4LjYxNDQiIGZpbGw9IndoaXRlIiBmaWxsLW9wYWNpdHk9IjAuMzYiIHNoYXBlLXJlbmRlcmluZz0iY3Jpc3BFZGdlcyIvPgo8L2c+CjxnIGlkPSJFbGxpcHNlIDEzMyIgZmlsdGVyPSJ1cmwoI2ZpbHRlcjNfZF8wXzI2MykiPgo8Y2lyY2xlIGN4PSIxMzEyLjE3IiBjeT0iNTgxLjQ4MyIgcj0iNTguNjE0NCIgZmlsbD0id2hpdGUiIGZpbGwtb3BhY2l0eT0iMC4zNiIgc2hhcGUtcmVuZGVyaW5nPSJjcmlzcEVkZ2VzIi8+CjwvZz4KPGcgaWQ9IlJlY3RhbmdsZSA4NSIgZmlsdGVyPSJ1cmwoI2ZpbHRlcjRfZF8wXzI2MykiPgo8cmVjdCB4PSIyNS41IiB5PSIxMjAxLjIiIHdpZHRoPSIxNDkuMDk3IiBoZWlnaHQ9IjM0MC4zMDUiIHJ4PSIxMCIgdHJhbnNmb3JtPSJyb3RhdGUoLTkwIDI1LjUgMTIwMS4yKSIgZmlsbD0id2hpdGUiIGZpbGwtb3BhY2l0eT0iMC4zNiIgc2hhcGUtcmVuZGVyaW5nPSJjcmlzcEVkZ2VzIi8+CjwvZz4KPGcgaWQ9IlJlY3RhbmdsZSA4NiIgZmlsdGVyPSJ1cmwoI2ZpbHRlcjVfZF8wXzI2MykiPgo8cmVjdCB4PSIyNS41IiB5PSIxNzM4LjQiIHdpZHRoPSI1MjMuNTQ2IiBoZWlnaHQ9IjM0MC4zMDUiIHJ4PSIxMCIgdHJhbnNmb3JtPSJyb3RhdGUoLTkwIDI1LjUgMTczOC40KSIgZmlsbD0id2hpdGUiIGZpbGwtb3BhY2l0eT0iMC4zNiIgc2hhcGUtcmVuZGVyaW5nPSJjcmlzcEVkZ2VzIi8+CjwvZz4KPGcgaWQ9IlJlY3RhbmdsZSA4OCIgZmlsdGVyPSJ1cmwoI2ZpbHRlcjZfZF8wXzI2MykiPgo8cmVjdCB4PSI4MzMuNTgxIiB5PSIxNzM4LjQiIHdpZHRoPSI3OTEuMDA5IiBoZWlnaHQ9IjMzNi44OSIgcng9IjEwIiB0cmFuc2Zvcm09InJvdGF0ZSgtOTAgODMzLjU4MSAxNzM4LjQpIiBmaWxsPSJ3aGl0ZSIgZmlsbC1vcGFjaXR5PSIwLjM2IiBzaGFwZS1yZW5kZXJpbmc9ImNyaXNwRWRnZXMiLz4KPC9nPgo8ZyBpZD0iUmVjdGFuZ2xlIDg3IiBmaWx0ZXI9InVybCgjZmlsdGVyN19kXzBfMjYzKSI+CjxyZWN0IHg9IjM4OS43MDYiIHk9IjE1MDcuMzYiIHdpZHRoPSI0MjkuMDgiIGhlaWdodD0iMjMxLjA0MyIgcng9IjEwIiBmaWxsPSJ3aGl0ZSIgZmlsbC1vcGFjaXR5PSIwLjM2IiBzaGFwZS1yZW5kZXJpbmc9ImNyaXNwRWRnZXMiLz4KPC9nPgo8L2c+CjxkZWZzPgo8ZmlsdGVyIGlkPSJmaWx0ZXIwX2RfMF8yNjMiIHg9IjQwMC42MjUiIHk9IjAiIHdpZHRoPSI2ODIuNjY5IiBoZWlnaHQ9IjkyMy45NTUiIGZpbHRlclVuaXRzPSJ1c2VyU3BhY2VPblVzZSIgY29sb3ItaW50ZXJwb2xhdGlvbi1maWx0ZXJzPSJzUkdCIj4KPGZlRmxvb2QgZmxvb2Qtb3BhY2l0eT0iMCIgcmVzdWx0PSJCYWNrZ3JvdW5kSW1hZ2VGaXgiLz4KPGZlQ29sb3JNYXRyaXggaW49IlNvdXJjZUFscGhhIiB0eXBlPSJtYXRyaXgiIHZhbHVlcz0iMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMTI3IDAiIHJlc3VsdD0iaGFyZEFscGhhIi8+CjxmZU1vcnBob2xvZ3kgcmFkaXVzPSI1IiBvcGVyYXRvcj0iZGlsYXRlIiBpbj0iU291cmNlQWxwaGEiIHJlc3VsdD0iZWZmZWN0MV9kcm9wU2hhZG93XzBfMjYzIi8+CjxmZU9mZnNldC8+CjxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjEwLjI1Ii8+CjxmZUNvbXBvc2l0ZSBpbjI9ImhhcmRBbHBoYSIgb3BlcmF0b3I9Im91dCIvPgo8ZmVDb2xvck1hdHJpeCB0eXBlPSJtYXRyaXgiIHZhbHVlcz0iMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMC4xMSAwIi8+CjxmZUJsZW5kIG1vZGU9Im5vcm1hbCIgaW4yPSJCYWNrZ3JvdW5kSW1hZ2VGaXgiIHJlc3VsdD0iZWZmZWN0MV9kcm9wU2hhZG93XzBfMjYzIi8+CjxmZUJsZW5kIG1vZGU9Im5vcm1hbCIgaW49IlNvdXJjZUdyYXBoaWMiIGluMj0iZWZmZWN0MV9kcm9wU2hhZG93XzBfMjYzIiByZXN1bHQ9InNoYXBlIi8+CjwvZmlsdGVyPgo8ZmlsdGVyIGlkPSJmaWx0ZXIxX2RfMF8yNjMiIHg9IjEyMjguMDYiIHk9IjczLjk3OTMiIHdpZHRoPSIxNjguMjI5IiBoZWlnaHQ9IjE2OC4yMjkiIGZpbHRlclVuaXRzPSJ1c2VyU3BhY2VPblVzZSIgY29sb3ItaW50ZXJwb2xhdGlvbi1maWx0ZXJzPSJzUkdCIj4KPGZlRmxvb2QgZmxvb2Qtb3BhY2l0eT0iMCIgcmVzdWx0PSJCYWNrZ3JvdW5kSW1hZ2VGaXgiLz4KPGZlQ29sb3JNYXRyaXggaW49IlNvdXJjZUFscGhhIiB0eXBlPSJtYXRyaXgiIHZhbHVlcz0iMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMTI3IDAiIHJlc3VsdD0iaGFyZEFscGhhIi8+CjxmZU1vcnBob2xvZ3kgcmFkaXVzPSI1IiBvcGVyYXRvcj0iZGlsYXRlIiBpbj0iU291cmNlQWxwaGEiIHJlc3VsdD0iZWZmZWN0MV9kcm9wU2hhZG93XzBfMjYzIi8+CjxmZU9mZnNldC8+CjxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjEwLjI1Ii8+CjxmZUNvbXBvc2l0ZSBpbjI9ImhhcmRBbHBoYSIgb3BlcmF0b3I9Im91dCIvPgo8ZmVDb2xvck1hdHJpeCB0eXBlPSJtYXRyaXgiIHZhbHVlcz0iMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMC4xMSAwIi8+CjxmZUJsZW5kIG1vZGU9Im5vcm1hbCIgaW4yPSJCYWNrZ3JvdW5kSW1hZ2VGaXgiIHJlc3VsdD0iZWZmZWN0MV9kcm9wU2hhZG93XzBfMjYzIi8+CjxmZUJsZW5kIG1vZGU9Im5vcm1hbCIgaW49IlNvdXJjZUdyYXBoaWMiIGluMj0iZWZmZWN0MV9kcm9wU2hhZG93XzBfMjYzIiByZXN1bHQ9InNoYXBlIi8+CjwvZmlsdGVyPgo8ZmlsdGVyIGlkPSJmaWx0ZXIyX2RfMF8yNjMiIHg9IjEyMjguMDYiIHk9IjI4NS42NzQiIHdpZHRoPSIxNjguMjI5IiBoZWlnaHQ9IjE2OC4yMjkiIGZpbHRlclVuaXRzPSJ1c2VyU3BhY2VPblVzZSIgY29sb3ItaW50ZXJwb2xhdGlvbi1maWx0ZXJzPSJzUkdCIj4KPGZlRmxvb2QgZmxvb2Qtb3BhY2l0eT0iMCIgcmVzdWx0PSJCYWNrZ3JvdW5kSW1hZ2VGaXgiLz4KPGZlQ29sb3JNYXRyaXggaW49IlNvdXJjZUFscGhhIiB0eXBlPSJtYXRyaXgiIHZhbHVlcz0iMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMTI3IDAiIHJlc3VsdD0iaGFyZEFscGhhIi8+CjxmZU1vcnBob2xvZ3kgcmFkaXVzPSI1IiBvcGVyYXRvcj0iZGlsYXRlIiBpbj0iU291cmNlQWxwaGEiIHJlc3VsdD0iZWZmZWN0MV9kcm9wU2hhZG93XzBfMjYzIi8+CjxmZU9mZnNldC8+CjxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjEwLjI1Ii8+CjxmZUNvbXBvc2l0ZSBpbjI9ImhhcmRBbHBoYSIgb3BlcmF0b3I9Im91dCIvPgo8ZmVDb2xvck1hdHJpeCB0eXBlPSJtYXRyaXgiIHZhbHVlcz0iMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMC4xMSAwIi8+CjxmZUJsZW5kIG1vZGU9Im5vcm1hbCIgaW4yPSJCYWNrZ3JvdW5kSW1hZ2VGaXgiIHJlc3VsdD0iZWZmZWN0MV9kcm9wU2hhZG93XzBfMjYzIi8+CjxmZUJsZW5kIG1vZGU9Im5vcm1hbCIgaW49IlNvdXJjZUdyYXBoaWMiIGluMj0iZWZmZWN0MV9kcm9wU2hhZG93XzBfMjYzIiByZXN1bHQ9InNoYXBlIi8+CjwvZmlsdGVyPgo8ZmlsdGVyIGlkPSJmaWx0ZXIzX2RfMF8yNjMiIHg9IjEyMjguMDYiIHk9IjQ5Ny4zNjgiIHdpZHRoPSIxNjguMjI5IiBoZWlnaHQ9IjE2OC4yMjkiIGZpbHRlclVuaXRzPSJ1c2VyU3BhY2VPblVzZSIgY29sb3ItaW50ZXJwb2xhdGlvbi1maWx0ZXJzPSJzUkdCIj4KPGZlRmxvb2QgZmxvb2Qtb3BhY2l0eT0iMCIgcmVzdWx0PSJCYWNrZ3JvdW5kSW1hZ2VGaXgiLz4KPGZlQ29sb3JNYXRyaXggaW49IlNvdXJjZUFscGhhIiB0eXBlPSJtYXRyaXgiIHZhbHVlcz0iMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMTI3IDAiIHJlc3VsdD0iaGFyZEFscGhhIi8+CjxmZU1vcnBob2xvZ3kgcmFkaXVzPSI1IiBvcGVyYXRvcj0iZGlsYXRlIiBpbj0iU291cmNlQWxwaGEiIHJlc3VsdD0iZWZmZWN0MV9kcm9wU2hhZG93XzBfMjYzIi8+CjxmZU9mZnNldC8+CjxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjEwLjI1Ii8+CjxmZUNvbXBvc2l0ZSBpbjI9ImhhcmRBbHBoYSIgb3BlcmF0b3I9Im91dCIvPgo8ZmVDb2xvck1hdHJpeCB0eXBlPSJtYXRyaXgiIHZhbHVlcz0iMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMC4xMSAwIi8+CjxmZUJsZW5kIG1vZGU9Im5vcm1hbCIgaW4yPSJCYWNrZ3JvdW5kSW1hZ2VGaXgiIHJlc3VsdD0iZWZmZWN0MV9kcm9wU2hhZG93XzBfMjYzIi8+CjxmZUJsZW5kIG1vZGU9Im5vcm1hbCIgaW49IlNvdXJjZUdyYXBoaWMiIGluMj0iZWZmZWN0MV9kcm9wU2hhZG93XzBfMjYzIiByZXN1bHQ9InNoYXBlIi8+CjwvZmlsdGVyPgo8ZmlsdGVyIGlkPSJmaWx0ZXI0X2RfMF8yNjMiIHg9Ii0yLjk4MDIzZS0wOCIgeT0iMTAyNi42IiB3aWR0aD0iMzkxLjMwNSIgaGVpZ2h0PSIyMDAuMDk3IiBmaWx0ZXJVbml0cz0idXNlclNwYWNlT25Vc2UiIGNvbG9yLWludGVycG9sYXRpb24tZmlsdGVycz0ic1JHQiI+CjxmZUZsb29kIGZsb29kLW9wYWNpdHk9IjAiIHJlc3VsdD0iQmFja2dyb3VuZEltYWdlRml4Ii8+CjxmZUNvbG9yTWF0cml4IGluPSJTb3VyY2VBbHBoYSIgdHlwZT0ibWF0cml4IiB2YWx1ZXM9IjAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDEyNyAwIiByZXN1bHQ9ImhhcmRBbHBoYSIvPgo8ZmVNb3JwaG9sb2d5IHJhZGl1cz0iNSIgb3BlcmF0b3I9ImRpbGF0ZSIgaW49IlNvdXJjZUFscGhhIiByZXN1bHQ9ImVmZmVjdDFfZHJvcFNoYWRvd18wXzI2MyIvPgo8ZmVPZmZzZXQvPgo8ZmVHYXVzc2lhbkJsdXIgc3RkRGV2aWF0aW9uPSIxMC4yNSIvPgo8ZmVDb21wb3NpdGUgaW4yPSJoYXJkQWxwaGEiIG9wZXJhdG9yPSJvdXQiLz4KPGZlQ29sb3JNYXRyaXggdHlwZT0ibWF0cml4IiB2YWx1ZXM9IjAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAuMTEgMCIvPgo8ZmVCbGVuZCBtb2RlPSJub3JtYWwiIGluMj0iQmFja2dyb3VuZEltYWdlRml4IiByZXN1bHQ9ImVmZmVjdDFfZHJvcFNoYWRvd18wXzI2MyIvPgo8ZmVCbGVuZCBtb2RlPSJub3JtYWwiIGluPSJTb3VyY2VHcmFwaGljIiBpbjI9ImVmZmVjdDFfZHJvcFNoYWRvd18wXzI2MyIgcmVzdWx0PSJzaGFwZSIvPgo8L2ZpbHRlcj4KPGZpbHRlciBpZD0iZmlsdGVyNV9kXzBfMjYzIiB4PSItMi45ODAyM2UtMDgiIHk9IjExODkuMzYiIHdpZHRoPSIzOTEuMzA1IiBoZWlnaHQ9IjU3NC41NDYiIGZpbHRlclVuaXRzPSJ1c2VyU3BhY2VPblVzZSIgY29sb3ItaW50ZXJwb2xhdGlvbi1maWx0ZXJzPSJzUkdCIj4KPGZlRmxvb2QgZmxvb2Qtb3BhY2l0eT0iMCIgcmVzdWx0PSJCYWNrZ3JvdW5kSW1hZ2VGaXgiLz4KPGZlQ29sb3JNYXRyaXggaW49IlNvdXJjZUFscGhhIiB0eXBlPSJtYXRyaXgiIHZhbHVlcz0iMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMTI3IDAiIHJlc3VsdD0iaGFyZEFscGhhIi8+CjxmZU1vcnBob2xvZ3kgcmFkaXVzPSI1IiBvcGVyYXRvcj0iZGlsYXRlIiBpbj0iU291cmNlQWxwaGEiIHJlc3VsdD0iZWZmZWN0MV9kcm9wU2hhZG93XzBfMjYzIi8+CjxmZU9mZnNldC8+CjxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjEwLjI1Ii8+CjxmZUNvbXBvc2l0ZSBpbjI9ImhhcmRBbHBoYSIgb3BlcmF0b3I9Im91dCIvPgo8ZmVDb2xvck1hdHJpeCB0eXBlPSJtYXRyaXgiIHZhbHVlcz0iMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMC4xMSAwIi8+CjxmZUJsZW5kIG1vZGU9Im5vcm1hbCIgaW4yPSJCYWNrZ3JvdW5kSW1hZ2VGaXgiIHJlc3VsdD0iZWZmZWN0MV9kcm9wU2hhZG93XzBfMjYzIi8+CjxmZUJsZW5kIG1vZGU9Im5vcm1hbCIgaW49IlNvdXJjZUdyYXBoaWMiIGluMj0iZWZmZWN0MV9kcm9wU2hhZG93XzBfMjYzIiByZXN1bHQ9InNoYXBlIi8+CjwvZmlsdGVyPgo8ZmlsdGVyIGlkPSJmaWx0ZXI2X2RfMF8yNjMiIHg9IjgwOC4wODEiIHk9IjkyMS44OTYiIHdpZHRoPSIzODcuODkiIGhlaWdodD0iODQyLjAwOSIgZmlsdGVyVW5pdHM9InVzZXJTcGFjZU9uVXNlIiBjb2xvci1pbnRlcnBvbGF0aW9uLWZpbHRlcnM9InNSR0IiPgo8ZmVGbG9vZCBmbG9vZC1vcGFjaXR5PSIwIiByZXN1bHQ9IkJhY2tncm91bmRJbWFnZUZpeCIvPgo8ZmVDb2xvck1hdHJpeCBpbj0iU291cmNlQWxwaGEiIHR5cGU9Im1hdHJpeCIgdmFsdWVzPSIwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAxMjcgMCIgcmVzdWx0PSJoYXJkQWxwaGEiLz4KPGZlTW9ycGhvbG9neSByYWRpdXM9IjUiIG9wZXJhdG9yPSJkaWxhdGUiIGluPSJTb3VyY2VBbHBoYSIgcmVzdWx0PSJlZmZlY3QxX2Ryb3BTaGFkb3dfMF8yNjMiLz4KPGZlT2Zmc2V0Lz4KPGZlR2F1c3NpYW5CbHVyIHN0ZERldmlhdGlvbj0iMTAuMjUiLz4KPGZlQ29tcG9zaXRlIGluMj0iaGFyZEFscGhhIiBvcGVyYXRvcj0ib3V0Ii8+CjxmZUNvbG9yTWF0cml4IHR5cGU9Im1hdHJpeCIgdmFsdWVzPSIwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwLjExIDAiLz4KPGZlQmxlbmQgbW9kZT0ibm9ybWFsIiBpbjI9IkJhY2tncm91bmRJbWFnZUZpeCIgcmVzdWx0PSJlZmZlY3QxX2Ryb3BTaGFkb3dfMF8yNjMiLz4KPGZlQmxlbmQgbW9kZT0ibm9ybWFsIiBpbj0iU291cmNlR3JhcGhpYyIgaW4yPSJlZmZlY3QxX2Ryb3BTaGFkb3dfMF8yNjMiIHJlc3VsdD0ic2hhcGUiLz4KPC9maWx0ZXI+CjxmaWx0ZXIgaWQ9ImZpbHRlcjdfZF8wXzI2MyIgeD0iMzY0LjIwNiIgeT0iMTQ4MS44NiIgd2lkdGg9IjQ4MC4wOCIgaGVpZ2h0PSIyODIuMDQzIiBmaWx0ZXJVbml0cz0idXNlclNwYWNlT25Vc2UiIGNvbG9yLWludGVycG9sYXRpb24tZmlsdGVycz0ic1JHQiI+CjxmZUZsb29kIGZsb29kLW9wYWNpdHk9IjAiIHJlc3VsdD0iQmFja2dyb3VuZEltYWdlRml4Ii8+CjxmZUNvbG9yTWF0cml4IGluPSJTb3VyY2VBbHBoYSIgdHlwZT0ibWF0cml4IiB2YWx1ZXM9IjAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDEyNyAwIiByZXN1bHQ9ImhhcmRBbHBoYSIvPgo8ZmVNb3JwaG9sb2d5IHJhZGl1cz0iNSIgb3BlcmF0b3I9ImRpbGF0ZSIgaW49IlNvdXJjZUFscGhhIiByZXN1bHQ9ImVmZmVjdDFfZHJvcFNoYWRvd18wXzI2MyIvPgo8ZmVPZmZzZXQvPgo8ZmVHYXVzc2lhbkJsdXIgc3RkRGV2aWF0aW9uPSIxMC4yNSIvPgo8ZmVDb21wb3NpdGUgaW4yPSJoYXJkQWxwaGEiIG9wZXJhdG9yPSJvdXQiLz4KPGZlQ29sb3JNYXRyaXggdHlwZT0ibWF0cml4IiB2YWx1ZXM9IjAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAuMTEgMCIvPgo8ZmVCbGVuZCBtb2RlPSJub3JtYWwiIGluMj0iQmFja2dyb3VuZEltYWdlRml4IiByZXN1bHQ9ImVmZmVjdDFfZHJvcFNoYWRvd18wXzI2MyIvPgo8ZmVCbGVuZCBtb2RlPSJub3JtYWwiIGluPSJTb3VyY2VHcmFwaGljIiBpbjI9ImVmZmVjdDFfZHJvcFNoYWRvd18wXzI2MyIgcmVzdWx0PSJzaGFwZSIvPgo8L2ZpbHRlcj4KPC9kZWZzPgo8L3N2Zz4K" alt=""></div>
+              <div id="pins"></div>
+            </div>
+          </div>
+
+          <div class="heading" aria-hidden="true">Choose a floor</div>
+          <div class="chip-floor plan-ui" aria-hidden="true">Floor</div>
+          <button class="stack plan-ui" id="stack" aria-label="Back to building">
+            <span class="sq" data-n="1">1</span><span class="sq" data-n="2">2</span><span class="sq" data-n="3">3</span>
+          </button>
+          <nav class="pager plan-ui" aria-label="Choose floor">
+            <button class="to3d" id="back" aria-label="All floors"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round"><path d="M12 3.5l8 4-8 4-8-4z"/><path d="M4 12l8 4 8-4"/><path d="M4 16.5l8 4 8-4"/></svg></button><span class="sep" aria-hidden="true"></span><button data-go="1">1</button><button data-go="2">2</button><button data-go="3">3</button>
+          </nav>
+
+          <button class="logo" id="logo" aria-label="SEEK home"><img src="data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9IjI2NCIgaGVpZ2h0PSIyNjQiIHZpZXdCb3g9IjAgMCAyNjQgMjY0IiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgo8ZyBpZD0iR3JvdXAgNCI+CjxjaXJjbGUgaWQ9IkVsbGlwc2UgMTE3IiBjeD0iMjM2LjkyMyIgY3k9Ijk3LjAyNjIiIHI9IjI3LjA3NjkiIGZpbGw9IiMwRjE3MkEiLz4KPGNpcmNsZSBpZD0iRWxsaXBzZSAxMTgiIGN4PSIxNjYuOTc1IiBjeT0iMjM2LjkyMyIgcj0iMjcuMDc2OSIgdHJhbnNmb3JtPSJyb3RhdGUoOTAgMTY2Ljk3NSAyMzYuOTIzKSIgZmlsbD0iIzBGMTcyQSIvPgo8Y2lyY2xlIGlkPSJFbGxpcHNlIDExOSIgY3g9IjI3LjA3NzIiIGN5PSIxNjYuOTc0IiByPSIyNy4wNzY5IiB0cmFuc2Zvcm09InJvdGF0ZSgxODAgMjcuMDc3MiAxNjYuOTc0KSIgZmlsbD0iIzBGMTcyQSIvPgo8Y2lyY2xlIGlkPSJFbGxpcHNlIDEyMCIgY3g9Ijk3LjAyNTEiIGN5PSIyNy4wNzciIHI9IjI3LjA3NjkiIHRyYW5zZm9ybT0icm90YXRlKC05MCA5Ny4wMjUxIDI3LjA3NykiIGZpbGw9IiMwRjE3MkEiLz4KPGNpcmNsZSBpZD0iRWxsaXBzZSAxMjEiIGN4PSIxNjYuOTc1IiBjeT0iMjcuMDc3MiIgcj0iMjcuMDc2OSIgZmlsbD0iIzBGMTcyQSIvPgo8Y2lyY2xlIGlkPSJFbGxpcHNlIDEyMiIgY3g9IjIzNi45MjMiIGN5PSIxNjYuOTc1IiByPSIyNy4wNzY5IiB0cmFuc2Zvcm09InJvdGF0ZSg5MCAyMzYuOTIzIDE2Ni45NzUpIiBmaWxsPSIjMEYxNzJBIi8+CjxjaXJjbGUgaWQ9IkVsbGlwc2UgMTIzIiBjeD0iOTcuMDI1MiIgY3k9IjIzNi45MjMiIHI9IjI3LjA3NjkiIHRyYW5zZm9ybT0icm90YXRlKDE4MCA5Ny4wMjUyIDIzNi45MjMpIiBmaWxsPSIjMEYxNzJBIi8+CjxjaXJjbGUgaWQ9IkVsbGlwc2UgMTI0IiBjeD0iMjcuMDc2OSIgY3k9Ijk3LjAyNiIgcj0iMjcuMDc2OSIgdHJhbnNmb3JtPSJyb3RhdGUoLTkwIDI3LjA3NjkgOTcuMDI2KSIgZmlsbD0iIzBGMTcyQSIvPgo8Y2lyY2xlIGlkPSJFbGxpcHNlIDEyNSIgY3g9IjIzNi45MjMiIGN5PSIyNy4wNzcyIiByPSIyNy4wNzY5IiBmaWxsPSIjMEYxNzJBIi8+CjxjaXJjbGUgaWQ9IkVsbGlwc2UgMTI2IiBjeD0iMTMzLjEyOCIgY3k9IjEzMy4xMjkiIHI9IjI3LjA3NjkiIGZpbGw9IiNFRDI1MEYiLz4KPGNpcmNsZSBpZD0iRWxsaXBzZSAxMjciIGN4PSIyMzYuOTIzIiBjeT0iMjM2LjkyMyIgcj0iMjcuMDc2OSIgdHJhbnNmb3JtPSJyb3RhdGUoOTAgMjM2LjkyMyAyMzYuOTIzKSIgZmlsbD0iIzBGMTcyQSIvPgo8Y2lyY2xlIGlkPSJFbGxpcHNlIDEyOCIgY3g9IjI3LjA3NzIiIGN5PSIyMzYuOTIzIiByPSIyNy4wNzY5IiB0cmFuc2Zvcm09InJvdGF0ZSgxODAgMjcuMDc3MiAyMzYuOTIzKSIgZmlsbD0iIzBGMTcyQSIvPgo8Y2lyY2xlIGlkPSJFbGxpcHNlIDEyOSIgY3g9IjI3LjA3NjkiIGN5PSIyNy4wNzciIHI9IjI3LjA3NjkiIHRyYW5zZm9ybT0icm90YXRlKC05MCAyNy4wNzY5IDI3LjA3NykiIGZpbGw9IiMwRjE3MkEiLz4KPHBhdGggaWQ9IlZlY3RvciAzMSIgZD0iTTE3My41MjcgNi41NDI5M0MxNzguNTAxIDUuMDE1MjEgMTgyLjg4OCA1LjM0MDA4IDE4NS43OTkgOC4yNTA5NEMxOTEuOTE4IDE0LjM2OTQgMTk1LjYwOSAyMy4zNDk1IDE5OS4wMjggMzIuMTM3N0MyMDAuNzMxIDM2LjUxNDggMjAyLjM2OCA0MC44NDUxIDIwNC4yMDEgNDQuNjk4MkMyMDYuMDMzIDQ4LjU1MDYgMjA4LjA3OCA1MS45NjY2IDIxMC42MiA1NC41MDc4QzIxMy4xNjEgNTcuMDQ5IDIxNi41NzcgNTkuMDk1MSAyMjAuNDEzIDYwLjkxMDFDMjI0LjI0OSA2Mi43MjU3IDIyOC41NDUgNjQuMzI2NyAyMzIuODUzIDY1Ljk1OTlDMjQxLjUwOSA2OS4yNDEzIDI1MC4xOTggNzIuNjQ5NCAyNTUuNzQ5IDc4LjIwMDJDMjU4LjM0OCA4MC43OTk3IDI1OC4zNjkgODUuMjU2NyAyNTYuNDc4IDkwLjUxMDdDMjU0LjYwMSA5NS43MjM5IDI1MC45MDMgMTAxLjUyMiAyNDYuNDIgMTA2LjU2NUMyNDEuOTM2IDExMS42MTEgMjM2LjcwNCAxMTUuODU3IDIzMS43ODcgMTE4LjAwNEMyMjYuODY2IDEyMC4xNTIgMjIyLjM5NyAxMjAuMTU0IDIxOS4yMjQgMTE2Ljk4QzIxMi41MzggMTEwLjI5NSAyMDkuMDE3IDEwMS43NTkgMjA1LjY4NSA5My4zNDQ3QzIwMi4zNjkgODQuOTY5MSAxOTkuMjMxIDc2LjY3ODUgMTkzLjI3NiA3MC43MjM2QzE5MC4yODMgNjcuNzMwNyAxODYuMzI0IDY1LjM4OCAxODEuOTczIDYzLjMzQzE3Ny42MjUgNjEuMjczMyAxNzIuODM2IDU5LjQ3OTQgMTY4LjE5MiA1Ny42MTAzQzE2My41MzQgNTUuNzM1NyAxNTkuMDA5IDUzLjc4MTYgMTU1LjEyNSA1MS4zOTA2QzE1MS4yNDQgNDkuMDAwNSAxNDguMDMxIDQ2LjE5MTMgMTQ1Ljk3IDQyLjYyMkMxNDMuOTc5IDM5LjE3MzMgMTQ0LjYgMzQuNTc4MyAxNDcuMDE0IDI5LjY5NjNDMTQ5LjQxOSAyNC44MzMzIDE1My41NTEgMTkuODA2NiAxNTguMzQ1IDE1LjYwNzRDMTYzLjE0MSAxMS40MDcxIDE2OC41NjMgOC4wNjc0NSAxNzMuNTI3IDYuNTQyOTNaIiBmaWxsPSIjMEYxNzJBIiBzdHJva2U9IiMwRjE3MkEiLz4KPHBhdGggaWQ9IlZlY3RvciAzMiIgZD0iTTI1Ny40NTkgMTczLjUyOEMyNTguOTg3IDE3OC41MDIgMjU4LjY2MiAxODIuODg5IDI1NS43NTEgMTg1LjhDMjQ5LjYzMiAxOTEuOTE5IDI0MC42NTIgMTk1LjYxIDIzMS44NjQgMTk5LjAyOUMyMjcuNDg3IDIwMC43MzIgMjIzLjE1NyAyMDIuMzY5IDIxOS4zMDQgMjA0LjIwMkMyMTUuNDUxIDIwNi4wMzQgMjEyLjAzNSAyMDguMDggMjA5LjQ5NCAyMTAuNjIxQzIwNi45NTMgMjEzLjE2MiAyMDQuOTA3IDIxNi41NzggMjAzLjA5MiAyMjAuNDE0QzIwMS4yNzYgMjI0LjI1IDE5OS42NzUgMjI4LjU0NiAxOTguMDQyIDIzMi44NTRDMTk0Ljc2IDI0MS41MSAxOTEuMzUyIDI1MC4xOTkgMTg1LjgwMiAyNTUuNzVDMTgzLjIwMiAyNTguMzQ5IDE3OC43NDUgMjU4LjM3IDE3My40OTEgMjU2LjQ3OUMxNjguMjc4IDI1NC42MDIgMTYyLjQ4IDI1MC45MDQgMTU3LjQzNiAyNDYuNDIxQzE1Mi4zOTEgMjQxLjkzNyAxNDguMTQ1IDIzNi43MDUgMTQ1Ljk5OCAyMzEuNzg4QzE0My44NDkgMjI2Ljg2NyAxNDMuODQ4IDIyMi4zOTggMTQ3LjAyMSAyMTkuMjI1QzE1My43MDcgMjEyLjUzOSAxNjIuMjQzIDIwOS4wMTggMTcwLjY1NyAyMDUuNjg2QzE3OS4wMzMgMjAyLjM3IDE4Ny4zMjMgMTk5LjIzMiAxOTMuMjc4IDE5My4yNzdDMTk2LjI3MSAxOTAuMjg0IDE5OC42MTQgMTg2LjMyNSAyMDAuNjcyIDE4MS45NzRDMjAyLjcyOSAxNzcuNjI2IDIwNC41MjIgMTcyLjgzNyAyMDYuMzkxIDE2OC4xOTNDMjA4LjI2NiAxNjMuNTM1IDIxMC4yMiAxNTkuMDEgMjEyLjYxMSAxNTUuMTI2QzIxNS4wMDEgMTUxLjI0NSAyMTcuODExIDE0OC4wMzIgMjIxLjM4IDE0NS45NzFDMjI0LjgyOCAxNDMuOTggMjI5LjQyNCAxNDQuNjAxIDIzNC4zMDYgMTQ3LjAxNUMyMzkuMTY4IDE0OS40MiAyNDQuMTk1IDE1My41NTIgMjQ4LjM5NCAxNTguMzQ2QzI1Mi41OTUgMTYzLjE0MiAyNTUuOTM0IDE2OC41NjQgMjU3LjQ1OSAxNzMuNTI4WiIgZmlsbD0iIzBGMTcyQSIgc3Ryb2tlPSIjMEYxNzJBIi8+CjxwYXRoIGlkPSJWZWN0b3IgMzMiIGQ9Ik05MC40NzMyIDI1Ny40NThDODUuNDk5IDI1OC45ODUgODEuMTEyIDI1OC42NiA3OC4yMDA3IDI1NS43NUM3Mi4wODE4IDI0OS42MzEgNjguMzkxNCAyNDAuNjUxIDY0Ljk3MjIgMjMxLjg2M0M2My4yNjkyIDIyNy40ODYgNjEuNjMyIDIyMy4xNTUgNTkuNzk5MyAyMTkuMzAyQzU3Ljk2NyAyMTUuNDUgNTUuOTIxNSAyMTIuMDM0IDUzLjM4MDQgMjA5LjQ5M0M1MC44MzkyIDIwNi45NTIgNDcuNDIzMSAyMDQuOTA1IDQzLjU4NzQgMjAzLjA5QzM5Ljc1MDYgMjAxLjI3NSAzNS40NTU1IDE5OS42NzQgMzEuMTQ3IDE5OC4wNDFDMjIuNDkwOSAxOTQuNzU5IDEzLjgwMjMgMTkxLjM1MSA4LjI1MTUgMTg1LjhDNS42NTIyNyAxODMuMjAxIDUuNjMwNTQgMTc4Ljc0NCA3LjUyMiAxNzMuNDlDOS4zOTg4MSAxNjguMjc3IDEzLjA5NjggMTYyLjQ3OCAxNy41Nzk2IDE1Ny40MzVDMjIuMDY0MyAxNTIuMzkgMjcuMjk2MyAxNDguMTQ0IDMyLjIxMzQgMTQ1Ljk5N0MzNy4xMzQzIDE0My44NDggNDEuNjAyNiAxNDMuODQ3IDQ0Ljc3NTkgMTQ3LjAyQzUxLjQ2MTggMTUzLjcwNiA1NC45ODMzIDE2Mi4yNDIgNTguMzE1IDE3MC42NTZDNjEuNjMxNCAxNzkuMDMxIDY0Ljc2OTMgMTg3LjMyMiA3MC43MjQyIDE5My4yNzdDNzMuNzE3MSAxOTYuMjcgNzcuNjc1OSAxOTguNjEzIDgyLjAyNjkgMjAwLjY3MUM4Ni4zNzU1IDIwMi43MjcgOTEuMTYzNyAyMDQuNTIxIDk1LjgwODEgMjA2LjM5QzEwMC40NjYgMjA4LjI2NSAxMDQuOTkxIDIxMC4yMTkgMTA4Ljg3NSAyMTIuNjFDMTEyLjc1NiAyMTUgMTE1Ljk2OSAyMTcuODA5IDExOC4wMyAyMjEuMzc5QzEyMC4wMjEgMjI0LjgyNyAxMTkuNCAyMjkuNDIyIDExNi45ODYgMjM0LjMwNEMxMTQuNTgxIDIzOS4xNjcgMTEwLjQ0OSAyNDQuMTk0IDEwNS42NTUgMjQ4LjM5M0MxMDAuODU5IDI1Mi41OTMgOTUuNDM2NyAyNTUuOTMzIDkwLjQ3MzIgMjU3LjQ1OFoiIGZpbGw9IiMwRjE3MkEiIHN0cm9rZT0iIzBGMTcyQSIvPgo8cGF0aCBpZD0iVmVjdG9yIDM0IiBkPSJNNi41NDExNCA5MC40NzI3QzUuMDEzNDIgODUuNDk4NSA1LjMzODMgODEuMTExNSA4LjI0OTE1IDc4LjIwMDJDMTQuMzY3NiA3Mi4wODE0IDIzLjM0NzcgNjguMzkwOSAzMi4xMzU5IDY0Ljk3MTdDMzYuNTEzIDYzLjI2ODcgNDAuODQzMyA2MS42MzE1IDQ0LjY5NjQgNTkuNzk4OUM0OC41NDg4IDU3Ljk2NjYgNTEuOTY0OSA1NS45MjEgNTQuNTA2IDUzLjM3OTlDNTcuMDQ3MiA1MC44Mzg3IDU5LjA5MzMgNDcuNDIyNyA2MC45MDgzIDQzLjU4N0M2Mi43MjM5IDM5Ljc1MDIgNjQuMzI0OSAzNS40NTUgNjUuOTU4MSAzMS4xNDY1QzY5LjIzOTUgMjIuNDkwNSA3Mi42NDc2IDEzLjgwMTggNzguMTk4NCA4LjI1MTAzQzgwLjc5NzkgNS42NTE4MSA4NS4yNTQ5IDUuNjMwMDggOTAuNTA4OSA3LjUyMTU0Qzk1LjcyMjEgOS4zOTgzNSAxMDEuNTIgMTMuMDk2NCAxMDYuNTY0IDE3LjU3OTJDMTExLjYwOSAyMi4wNjM5IDExNS44NTUgMjcuMjk1OCAxMTguMDAyIDMyLjIxMjlDMTIwLjE1MSAzNy4xMzM4IDEyMC4xNTIgNDEuNjAyMiAxMTYuOTc5IDQ0Ljc3NTRDMTEwLjI5MyA1MS40NjEzIDEwMS43NTcgNTQuOTgyOCA5My4zNDI5IDU4LjMxNDVDODQuOTY3NCA2MS42MzA5IDc2LjY3NjcgNjQuNzY4OCA3MC43MjE4IDcwLjcyMzdDNjcuNzI4OSA3My43MTY2IDY1LjM4NjIgNzcuNjc1NCA2My4zMjgzIDgyLjAyNjRDNjEuMjcxNSA4Ni4zNzUgNTkuNDc3NyA5MS4xNjMyIDU3LjYwODUgOTUuODA3N0M1NS43MzM5IDEwMC40NjYgNTMuNzc5OCAxMDQuOTkgNTEuMzg4OCAxMDguODc0QzQ4Ljk5ODggMTEyLjc1NiA0Ni4xODk1IDExNS45NjkgNDIuNjIwMiAxMTguMDI5QzM5LjE3MTYgMTIwLjAyIDM0LjU3NjUgMTE5LjQgMjkuNjk0NSAxMTYuOTg1QzI0LjgzMTYgMTE0LjU4IDE5LjgwNDkgMTEwLjQ0OSAxNS42MDU2IDEwNS42NTRDMTEuNDA1MyAxMDAuODU5IDguMDY1NjYgOTUuNDM2MiA2LjU0MTE0IDkwLjQ3MjdaIiBmaWxsPSIjMEYxNzJBIiBzdHJva2U9IiMwRjE3MkEiLz4KPC9nPgo8L3N2Zz4K" alt=""></button>
+
+          <!-- Events of the Day -->
+          <div class="scrim" id="scrim"></div>
+          <section class="sheet" id="sheet" aria-label="Events of the Day">
+            <div class="bg"></div>
+            <div class="peek" id="peek" role="button" tabindex="0" aria-label="Open Events of the Day"><div class="handle"></div></div>
+            <h2>Events of the Day</h2>
+            <button class="sheet-close" id="sheetClose" aria-label="Close Events of the Day"><svg viewBox="0 0 24 24" fill="none" stroke="#0f172a" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+            <div class="grid" id="grid"></div>
+          </section>
+
+          <div class="still" id="still" role="alertdialog" aria-labelledby="stillTitle">
+            <div class="still-card">
+              <svg class="still-mark" aria-hidden="true" preserveAspectRatio="none" overflow="visible" style="display: block;" width="264" height="264" viewBox="0 0 264 264" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Group 4">
+<circle id="Ellipse 117" cx="236.923" cy="97.0262" r="27.0769" fill="#0F172A"/>
+<circle id="Ellipse 118" cx="166.975" cy="236.923" r="27.0769" transform="rotate(90 166.975 236.923)" fill="#0F172A"/>
+<circle id="Ellipse 119" cx="27.0772" cy="166.974" r="27.0769" transform="rotate(180 27.0772 166.974)" fill="#0F172A"/>
+<circle id="Ellipse 120" cx="97.0251" cy="27.077" r="27.0769" transform="rotate(-90 97.0251 27.077)" fill="#0F172A"/>
+<circle id="Ellipse 121" cx="166.975" cy="27.0772" r="27.0769" fill="#0F172A"/>
+<circle id="Ellipse 122" cx="236.923" cy="166.975" r="27.0769" transform="rotate(90 236.923 166.975)" fill="#0F172A"/>
+<circle id="Ellipse 123" cx="97.0252" cy="236.923" r="27.0769" transform="rotate(180 97.0252 236.923)" fill="#0F172A"/>
+<circle id="Ellipse 124" cx="27.0769" cy="97.026" r="27.0769" transform="rotate(-90 27.0769 97.026)" fill="#0F172A"/>
+<circle id="Ellipse 125" cx="236.923" cy="27.0772" r="27.0769" fill="#0F172A"/>
+<circle id="Ellipse 126" cx="133.128" cy="133.129" r="27.0769" fill="#ED250F"/>
+<circle id="Ellipse 127" cx="236.923" cy="236.923" r="27.0769" transform="rotate(90 236.923 236.923)" fill="#0F172A"/>
+<circle id="Ellipse 128" cx="27.0772" cy="236.923" r="27.0769" transform="rotate(180 27.0772 236.923)" fill="#0F172A"/>
+<circle id="Ellipse 129" cx="27.0769" cy="27.077" r="27.0769" transform="rotate(-90 27.0769 27.077)" fill="#0F172A"/>
+<path id="Vector 31" d="M173.527 6.54293C178.501 5.01521 182.888 5.34008 185.799 8.25094C191.918 14.3694 195.609 23.3495 199.028 32.1377C200.731 36.5148 202.368 40.8451 204.201 44.6982C206.033 48.5506 208.078 51.9666 210.62 54.5078C213.161 57.049 216.577 59.0951 220.413 60.9101C224.249 62.7257 228.545 64.3267 232.853 65.9599C241.509 69.2413 250.198 72.6494 255.749 78.2002C258.348 80.7997 258.369 85.2567 256.478 90.5107C254.601 95.7239 250.903 101.522 246.42 106.565C241.936 111.611 236.704 115.857 231.787 118.004C226.866 120.152 222.397 120.154 219.224 116.98C212.538 110.295 209.017 101.759 205.685 93.3447C202.369 84.9691 199.231 76.6785 193.276 70.7236C190.283 67.7307 186.324 65.388 181.973 63.33C177.625 61.2733 172.836 59.4794 168.192 57.6103C163.534 55.7357 159.009 53.7816 155.125 51.3906C151.244 49.0005 148.031 46.1913 145.97 42.622C143.979 39.1733 144.6 34.5783 147.014 29.6963C149.419 24.8333 153.551 19.8066 158.345 15.6074C163.141 11.4071 168.563 8.06745 173.527 6.54293Z" fill="#0F172A" stroke="#0F172A"/>
+<path id="Vector 32" d="M257.459 173.528C258.987 178.502 258.662 182.889 255.751 185.8C249.632 191.919 240.652 195.61 231.864 199.029C227.487 200.732 223.157 202.369 219.304 204.202C215.451 206.034 212.035 208.08 209.494 210.621C206.953 213.162 204.907 216.578 203.092 220.414C201.276 224.25 199.675 228.546 198.042 232.854C194.76 241.51 191.352 250.199 185.802 255.75C183.202 258.349 178.745 258.37 173.491 256.479C168.278 254.602 162.48 250.904 157.436 246.421C152.391 241.937 148.145 236.705 145.998 231.788C143.849 226.867 143.848 222.398 147.021 219.225C153.707 212.539 162.243 209.018 170.657 205.686C179.033 202.37 187.323 199.232 193.278 193.277C196.271 190.284 198.614 186.325 200.672 181.974C202.729 177.626 204.522 172.837 206.391 168.193C208.266 163.535 210.22 159.01 212.611 155.126C215.001 151.245 217.811 148.032 221.38 145.971C224.828 143.98 229.424 144.601 234.306 147.015C239.168 149.42 244.195 153.552 248.394 158.346C252.595 163.142 255.934 168.564 257.459 173.528Z" fill="#0F172A" stroke="#0F172A"/>
+<path id="Vector 33" d="M90.4732 257.458C85.499 258.985 81.112 258.66 78.2007 255.75C72.0818 249.631 68.3914 240.651 64.9722 231.863C63.2692 227.486 61.632 223.155 59.7993 219.302C57.967 215.45 55.9215 212.034 53.3804 209.493C50.8392 206.952 47.4231 204.905 43.5874 203.09C39.7506 201.275 35.4555 199.674 31.147 198.041C22.4909 194.759 13.8023 191.351 8.2515 185.8C5.65227 183.201 5.63054 178.744 7.522 173.49C9.39881 168.277 13.0968 162.478 17.5796 157.435C22.0643 152.39 27.2963 148.144 32.2134 145.997C37.1343 143.848 41.6026 143.847 44.7759 147.02C51.4618 153.706 54.9833 162.242 58.315 170.656C61.6314 179.031 64.7693 187.322 70.7242 193.277C73.7171 196.27 77.6759 198.613 82.0269 200.671C86.3755 202.727 91.1637 204.521 95.8081 206.39C100.466 208.265 104.991 210.219 108.875 212.61C112.756 215 115.969 217.809 118.03 221.379C120.021 224.827 119.4 229.422 116.986 234.304C114.581 239.167 110.449 244.194 105.655 248.393C100.859 252.593 95.4367 255.933 90.4732 257.458Z" fill="#0F172A" stroke="#0F172A"/>
+<path id="Vector 34" d="M6.54114 90.4727C5.01342 85.4985 5.3383 81.1115 8.24915 78.2002C14.3676 72.0814 23.3477 68.3909 32.1359 64.9717C36.513 63.2687 40.8433 61.6315 44.6964 59.7989C48.5488 57.9666 51.9649 55.921 54.506 53.3799C57.0472 50.8387 59.0933 47.4227 60.9083 43.587C62.7239 39.7502 64.3249 35.455 65.9581 31.1465C69.2395 22.4905 72.6476 13.8018 78.1984 8.25103C80.7979 5.65181 85.2549 5.63008 90.5089 7.52154C95.7221 9.39835 101.52 13.0964 106.564 17.5792C111.609 22.0639 115.855 27.2958 118.002 32.2129C120.151 37.1338 120.152 41.6022 116.979 44.7754C110.293 51.4613 101.757 54.9828 93.3429 58.3145C84.9674 61.6309 76.6767 64.7688 70.7218 70.7237C67.7289 73.7166 65.3862 77.6754 63.3283 82.0264C61.2715 86.375 59.4777 91.1632 57.6085 95.8077C55.7339 100.466 53.7798 104.99 51.3888 108.874C48.9988 112.756 46.1895 115.969 42.6202 118.029C39.1716 120.02 34.5765 119.4 29.6945 116.985C24.8316 114.58 19.8049 110.449 15.6056 105.654C11.4053 100.859 8.06566 95.4362 6.54114 90.4727Z" fill="#0F172A" stroke="#0F172A"/>
+</g>
+</svg>
+
+              <h3 id="stillTitle">Still seeking?</h3>
+              <p>Heading back to the start in <b id="stillN">10</b> seconds.</p>
+              <button class="stay" id="stillBtn">I’m still here</button>
+              <button class="over" id="stillOver">Start over now</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="caption">
+    <span class="brand">SEEK</span>
+    <span class="hint" id="hint">Tap the building to explore</span>
+    <button class="restart" id="restart">Restart</button>
+  </div>
+</div>
+
+<script>var qrcode=function(){function i(t,r){function a(t,r){g=function(t){for(var r=new Array(t),e=0;e<t;e+=1){r[e]=new Array(t);for(var n=0;n<t;n+=1)r[e][n]=null}return r}(l=4*u+17),e(0,0),e(l-7,0),e(0,l-7),i(),o(),v(t,r),7<=u&&h(t),null==n&&(n=w(u,f,c)),d(n,r)}var u=t,f=y[r],g=null,l=0,n=null,c=[],s={},e=function(t,r){for(var e=-1;e<=7;e+=1)if(!(t+e<=-1||l<=t+e))for(var n=-1;n<=7;n+=1)r+n<=-1||l<=r+n||(g[t+e][r+n]=0<=e&&e<=6&&(0==n||6==n)||0<=n&&n<=6&&(0==e||6==e)||2<=e&&e<=4&&2<=n&&n<=4)},o=function(){for(var t=8;t<l-8;t+=1)null==g[t][6]&&(g[t][6]=t%2==0);for(var r=8;r<l-8;r+=1)null==g[6][r]&&(g[6][r]=r%2==0)},i=function(){for(var t=B.getPatternPosition(u),r=0;r<t.length;r+=1)for(var e=0;e<t.length;e+=1){var n=t[r],o=t[e];if(null==g[n][o])for(var i=-2;i<=2;i+=1)for(var a=-2;a<=2;a+=1)g[n+i][o+a]=-2==i||2==i||-2==a||2==a||0==i&&0==a}},h=function(t){for(var r=B.getBCHTypeNumber(u),e=0;e<18;e+=1){var n=!t&&1==(r>>e&1);g[Math.floor(e/3)][e%3+l-8-3]=n}for(e=0;e<18;e+=1){n=!t&&1==(r>>e&1);g[e%3+l-8-3][Math.floor(e/3)]=n}},v=function(t,r){for(var e=f<<3|r,n=B.getBCHTypeInfo(e),o=0;o<15;o+=1){var i=!t&&1==(n>>o&1);o<6?g[o][8]=i:o<8?g[o+1][8]=i:g[l-15+o][8]=i}for(o=0;o<15;o+=1){i=!t&&1==(n>>o&1);o<8?g[8][l-o-1]=i:o<9?g[8][15-o-1+1]=i:g[8][15-o-1]=i}g[l-8][8]=!t},d=function(t,r){for(var e=-1,n=l-1,o=7,i=0,a=B.getMaskFunction(r),u=l-1;0<u;u-=2)for(6==u&&(u-=1);;){for(var f=0;f<2;f+=1)if(null==g[n][u-f]){var c=!1;i<t.length&&(c=1==(t[i]>>>o&1)),a(n,u-f)&&(c=!c),g[n][u-f]=c,-1==(o-=1)&&(i+=1,o=7)}if((n+=e)<0||l<=n){n-=e,e=-e;break}}},w=function(t,r,e){for(var n=b.getRSBlocks(t,r),o=M(),i=0;i<e.length;i+=1){var a=e[i];o.put(a.getMode(),4),o.put(a.getLength(),B.getLengthInBits(a.getMode(),t)),a.write(o)}var u=0;for(i=0;i<n.length;i+=1)u+=n[i].dataCount;if(o.getLengthInBits()>8*u)throw"code length overflow. ("+o.getLengthInBits()+">"+8*u+")";for(o.getLengthInBits()+4<=8*u&&o.put(0,4);o.getLengthInBits()%8!=0;)o.putBit(!1);for(;!(o.getLengthInBits()>=8*u||(o.put(236,8),o.getLengthInBits()>=8*u));)o.put(17,8);return function(t,r){for(var e=0,n=0,o=0,i=new Array(r.length),a=new Array(r.length),u=0;u<r.length;u+=1){var f=r[u].dataCount,c=r[u].totalCount-f;n=Math.max(n,f),o=Math.max(o,c),i[u]=new Array(f);for(var g=0;g<i[u].length;g+=1)i[u][g]=255&t.getBuffer()[g+e];e+=f;var l=B.getErrorCorrectPolynomial(c),h=C(i[u],l.getLength()-1).mod(l);a[u]=new Array(l.getLength()-1);for(g=0;g<a[u].length;g+=1){var s=g+h.getLength()-a[u].length;a[u][g]=0<=s?h.getAt(s):0}}var v=0;for(g=0;g<r.length;g+=1)v+=r[g].totalCount;var d=new Array(v),w=0;for(g=0;g<n;g+=1)for(u=0;u<r.length;u+=1)g<i[u].length&&(d[w]=i[u][g],w+=1);for(g=0;g<o;g+=1)for(u=0;u<r.length;u+=1)g<a[u].length&&(d[w]=a[u][g],w+=1);return d}(o,n)};s.addData=function(t,r){var e=null;switch(r=r||"Byte"){case"Numeric":e=x(t);break;case"Alphanumeric":e=m(t);break;case"Byte":e=L(t);break;case"Kanji":e=D(t);break;default:throw"mode:"+r}c.push(e),n=null},s.isDark=function(t,r){if(t<0||l<=t||r<0||l<=r)throw t+","+r;return g[t][r]},s.getModuleCount=function(){return l},s.make=function(){if(u<1){for(var t=1;t<40;t++){for(var r=b.getRSBlocks(t,f),e=M(),n=0;n<c.length;n++){var o=c[n];e.put(o.getMode(),4),e.put(o.getLength(),B.getLengthInBits(o.getMode(),t)),o.write(e)}var i=0;for(n=0;n<r.length;n++)i+=r[n].dataCount;if(e.getLengthInBits()<=8*i)break}u=t}a(!1,function(){for(var t=0,r=0,e=0;e<8;e+=1){a(!0,e);var n=B.getLostPoint(s);(0==e||n<t)&&(t=n,r=e)}return r}())},s.createTableTag=function(t,r){t=t||2;var e="";e+='<table style="',e+=" border-width: 0px; border-style: none;",e+=" border-collapse: collapse;",e+=" padding: 0px; margin: "+(r=void 0===r?4*t:r)+"px;",e+='">',e+="<tbody>";for(var n=0;n<s.getModuleCount();n+=1){e+="<tr>";for(var o=0;o<s.getModuleCount();o+=1)e+='<td style="',e+=" border-width: 0px; border-style: none;",e+=" border-collapse: collapse;",e+=" padding: 0px; margin: 0px;",e+=" width: "+t+"px;",e+=" height: "+t+"px;",e+=" background-color: ",e+=s.isDark(n,o)?"#000000":"#ffffff",e+=";",e+='"/>';e+="</tr>"}return e+="</tbody>",e+="</table>"},s.createSvgTag=function(t,r,e,n){var o={};"object"==typeof t&&(t=(o=t).cellSize,r=o.margin,e=o.alt,n=o.title),t=t||2,r=void 0===r?4*t:r,(e="string"==typeof e?{text:e}:e||{}).text=e.text||null,e.id=e.text?e.id||"qrcode-description":null,(n="string"==typeof n?{text:n}:n||{}).text=n.text||null,n.id=n.text?n.id||"qrcode-title":null;var i,a,u,f,c=s.getModuleCount()*t+2*r,g="";for(f="l"+t+",0 0,"+t+" -"+t+",0 0,-"+t+"z ",g+='<svg version="1.1" xmlns="http://www.w3.org/2000/svg"',g+=o.scalable?"":' width="'+c+'px" height="'+c+'px"',g+=' viewBox="0 0 '+c+" "+c+'" ',g+=' preserveAspectRatio="xMinYMin meet"',g+=n.text||e.text?' role="img" aria-labelledby="'+p([n.id,e.id].join(" ").trim())+'"':"",g+=">",g+=n.text?'<title id="'+p(n.id)+'">'+p(n.text)+"</title>":"",g+=e.text?'<description id="'+p(e.id)+'">'+p(e.text)+"</description>":"",g+='<rect width="100%" height="100%" fill="white" cx="0" cy="0"/>',g+='<path d="',a=0;a<s.getModuleCount();a+=1)for(u=a*t+r,i=0;i<s.getModuleCount();i+=1)s.isDark(a,i)&&(g+="M"+(i*t+r)+","+u+f);return g+='" stroke="transparent" fill="black"/>',g+="</svg>"},s.createDataURL=function(o,t){o=o||2,t=void 0===t?4*o:t;var r=s.getModuleCount()*o+2*t,i=t,a=r-t;return I(r,r,function(t,r){if(i<=t&&t<a&&i<=r&&r<a){var e=Math.floor((t-i)/o),n=Math.floor((r-i)/o);return s.isDark(n,e)?0:1}return 1})},s.createImgTag=function(t,r,e){t=t||2,r=void 0===r?4*t:r;var n=s.getModuleCount()*t+2*r,o="";return o+="<img",o+=' src="',o+=s.createDataURL(t,r),o+='"',o+=' width="',o+=n,o+='"',o+=' height="',o+=n,o+='"',e&&(o+=' alt="',o+=p(e),o+='"'),o+="/>"};var p=function(t){for(var r="",e=0;e<t.length;e+=1){var n=t.charAt(e);switch(n){case"<":r+="&lt;";break;case">":r+="&gt;";break;case"&":r+="&amp;";break;case'"':r+="&quot;";break;default:r+=n}}return r};return s.createASCII=function(t,r){if((t=t||1)<2)return function(t){t=void 0===t?2:t;var r,e,n,o,i,a=1*s.getModuleCount()+2*t,u=t,f=a-t,c={"██":"█","█ ":"▀"," █":"▄","  ":" "},g={"██":"▀","█ ":"▀"," █":" ","  ":" "},l="";for(r=0;r<a;r+=2){for(n=Math.floor((r-u)/1),o=Math.floor((r+1-u)/1),e=0;e<a;e+=1)i="█",u<=e&&e<f&&u<=r&&r<f&&s.isDark(n,Math.floor((e-u)/1))&&(i=" "),u<=e&&e<f&&u<=r+1&&r+1<f&&s.isDark(o,Math.floor((e-u)/1))?i+=" ":i+="█",l+=t<1&&f<=r+1?g[i]:c[i];l+="\n"}return a%2&&0<t?l.substring(0,l.length-a-1)+Array(1+a).join("▀"):l.substring(0,l.length-1)}(r);t-=1,r=void 0===r?2*t:r;var e,n,o,i,a=s.getModuleCount()*t+2*r,u=r,f=a-r,c=Array(t+1).join("██"),g=Array(t+1).join("  "),l="",h="";for(e=0;e<a;e+=1){for(o=Math.floor((e-u)/t),h="",n=0;n<a;n+=1)i=1,u<=n&&n<f&&u<=e&&e<f&&s.isDark(o,Math.floor((n-u)/t))&&(i=0),h+=i?c:g;for(o=0;o<t;o+=1)l+=h+"\n"}return l.substring(0,l.length-1)},s.renderTo2dContext=function(t,r){r=r||2;for(var e=s.getModuleCount(),n=0;n<e;n++)for(var o=0;o<e;o++)t.fillStyle=s.isDark(n,o)?"black":"white",t.fillRect(n*r,o*r,r,r)},s}i.stringToBytes=(i.stringToBytesFuncs={default:function(t){for(var r=[],e=0;e<t.length;e+=1){var n=t.charCodeAt(e);r.push(255&n)}return r}}).default,i.createStringToBytes=function(u,f){var i=function(){function t(){var t=r.read();if(-1==t)throw"eof";return t}for(var r=S(u),e=0,n={};;){var o=r.read();if(-1==o)break;var i=t(),a=t()<<8|t();n[String.fromCharCode(o<<8|i)]=a,e+=1}if(e!=f)throw e+" != "+f;return n}(),a="?".charCodeAt(0);return function(t){for(var r=[],e=0;e<t.length;e+=1){var n=t.charCodeAt(e);if(n<128)r.push(n);else{var o=i[t.charAt(e)];"number"==typeof o?(255&o)==o?r.push(o):(r.push(o>>>8),r.push(255&o)):r.push(a)}}return r}};var r,t,a=1,u=2,o=4,f=8,y={L:1,M:0,Q:3,H:2},e=0,n=1,c=2,g=3,l=4,h=5,s=6,v=7,B=(r=[[],[6,18],[6,22],[6,26],[6,30],[6,34],[6,22,38],[6,24,42],[6,26,46],[6,28,50],[6,30,54],[6,32,58],[6,34,62],[6,26,46,66],[6,26,48,70],[6,26,50,74],[6,30,54,78],[6,30,56,82],[6,30,58,86],[6,34,62,90],[6,28,50,72,94],[6,26,50,74,98],[6,30,54,78,102],[6,28,54,80,106],[6,32,58,84,110],[6,30,58,86,114],[6,34,62,90,118],[6,26,50,74,98,122],[6,30,54,78,102,126],[6,26,52,78,104,130],[6,30,56,82,108,134],[6,34,60,86,112,138],[6,30,58,86,114,142],[6,34,62,90,118,146],[6,30,54,78,102,126,150],[6,24,50,76,102,128,154],[6,28,54,80,106,132,158],[6,32,58,84,110,136,162],[6,26,54,82,110,138,166],[6,30,58,86,114,142,170]],(t={}).getBCHTypeInfo=function(t){for(var r=t<<10;0<=d(r)-d(1335);)r^=1335<<d(r)-d(1335);return 21522^(t<<10|r)},t.getBCHTypeNumber=function(t){for(var r=t<<12;0<=d(r)-d(7973);)r^=7973<<d(r)-d(7973);return t<<12|r},t.getPatternPosition=function(t){return r[t-1]},t.getMaskFunction=function(t){switch(t){case e:return function(t,r){return(t+r)%2==0};case n:return function(t,r){return t%2==0};case c:return function(t,r){return r%3==0};case g:return function(t,r){return(t+r)%3==0};case l:return function(t,r){return(Math.floor(t/2)+Math.floor(r/3))%2==0};case h:return function(t,r){return t*r%2+t*r%3==0};case s:return function(t,r){return(t*r%2+t*r%3)%2==0};case v:return function(t,r){return(t*r%3+(t+r)%2)%2==0};default:throw"bad maskPattern:"+t}},t.getErrorCorrectPolynomial=function(t){for(var r=C([1],0),e=0;e<t;e+=1)r=r.multiply(C([1,w.gexp(e)],0));return r},t.getLengthInBits=function(t,r){if(1<=r&&r<10)switch(t){case a:return 10;case u:return 9;case o:case f:return 8;default:throw"mode:"+t}else if(r<27)switch(t){case a:return 12;case u:return 11;case o:return 16;case f:return 10;default:throw"mode:"+t}else{if(!(r<41))throw"type:"+r;switch(t){case a:return 14;case u:return 13;case o:return 16;case f:return 12;default:throw"mode:"+t}}},t.getLostPoint=function(t){for(var r=t.getModuleCount(),e=0,n=0;n<r;n+=1)for(var o=0;o<r;o+=1){for(var i=0,a=t.isDark(n,o),u=-1;u<=1;u+=1)if(!(n+u<0||r<=n+u))for(var f=-1;f<=1;f+=1)o+f<0||r<=o+f||0==u&&0==f||a==t.isDark(n+u,o+f)&&(i+=1);5<i&&(e+=3+i-5)}for(n=0;n<r-1;n+=1)for(o=0;o<r-1;o+=1){var c=0;t.isDark(n,o)&&(c+=1),t.isDark(n+1,o)&&(c+=1),t.isDark(n,o+1)&&(c+=1),t.isDark(n+1,o+1)&&(c+=1),0!=c&&4!=c||(e+=3)}for(n=0;n<r;n+=1)for(o=0;o<r-6;o+=1)t.isDark(n,o)&&!t.isDark(n,o+1)&&t.isDark(n,o+2)&&t.isDark(n,o+3)&&t.isDark(n,o+4)&&!t.isDark(n,o+5)&&t.isDark(n,o+6)&&(e+=40);for(o=0;o<r;o+=1)for(n=0;n<r-6;n+=1)t.isDark(n,o)&&!t.isDark(n+1,o)&&t.isDark(n+2,o)&&t.isDark(n+3,o)&&t.isDark(n+4,o)&&!t.isDark(n+5,o)&&t.isDark(n+6,o)&&(e+=40);var g=0;for(o=0;o<r;o+=1)for(n=0;n<r;n+=1)t.isDark(n,o)&&(g+=1);return e+=Math.abs(100*g/r/r-50)/5*10},t);function d(t){for(var r=0;0!=t;)r+=1,t>>>=1;return r}var w=function(){for(var r=new Array(256),e=new Array(256),t=0;t<8;t+=1)r[t]=1<<t;for(t=8;t<256;t+=1)r[t]=r[t-4]^r[t-5]^r[t-6]^r[t-8];for(t=0;t<255;t+=1)e[r[t]]=t;var n={glog:function(t){if(t<1)throw"glog("+t+")";return e[t]},gexp:function(t){for(;t<0;)t+=255;for(;256<=t;)t-=255;return r[t]}};return n}();function C(n,o){if(void 0===n.length)throw n.length+"/"+o;var r=function(){for(var t=0;t<n.length&&0==n[t];)t+=1;for(var r=new Array(n.length-t+o),e=0;e<n.length-t;e+=1)r[e]=n[e+t];return r}(),i={getAt:function(t){return r[t]},getLength:function(){return r.length},multiply:function(t){for(var r=new Array(i.getLength()+t.getLength()-1),e=0;e<i.getLength();e+=1)for(var n=0;n<t.getLength();n+=1)r[e+n]^=w.gexp(w.glog(i.getAt(e))+w.glog(t.getAt(n)));return C(r,0)},mod:function(t){if(i.getLength()-t.getLength()<0)return i;for(var r=w.glog(i.getAt(0))-w.glog(t.getAt(0)),e=new Array(i.getLength()),n=0;n<i.getLength();n+=1)e[n]=i.getAt(n);for(n=0;n<t.getLength();n+=1)e[n]^=w.gexp(w.glog(t.getAt(n))+r);return C(e,0).mod(t)}};return i}function p(){var e=[],o={writeByte:function(t){e.push(255&t)},writeShort:function(t){o.writeByte(t),o.writeByte(t>>>8)},writeBytes:function(t,r,e){r=r||0,e=e||t.length;for(var n=0;n<e;n+=1)o.writeByte(t[n+r])},writeString:function(t){for(var r=0;r<t.length;r+=1)o.writeByte(t.charCodeAt(r))},toByteArray:function(){return e},toString:function(){var t="";t+="[";for(var r=0;r<e.length;r+=1)0<r&&(t+=","),t+=e[r];return t+="]"}};return o}var k,A,b=(k=[[1,26,19],[1,26,16],[1,26,13],[1,26,9],[1,44,34],[1,44,28],[1,44,22],[1,44,16],[1,70,55],[1,70,44],[2,35,17],[2,35,13],[1,100,80],[2,50,32],[2,50,24],[4,25,9],[1,134,108],[2,67,43],[2,33,15,2,34,16],[2,33,11,2,34,12],[2,86,68],[4,43,27],[4,43,19],[4,43,15],[2,98,78],[4,49,31],[2,32,14,4,33,15],[4,39,13,1,40,14],[2,121,97],[2,60,38,2,61,39],[4,40,18,2,41,19],[4,40,14,2,41,15],[2,146,116],[3,58,36,2,59,37],[4,36,16,4,37,17],[4,36,12,4,37,13],[2,86,68,2,87,69],[4,69,43,1,70,44],[6,43,19,2,44,20],[6,43,15,2,44,16],[4,101,81],[1,80,50,4,81,51],[4,50,22,4,51,23],[3,36,12,8,37,13],[2,116,92,2,117,93],[6,58,36,2,59,37],[4,46,20,6,47,21],[7,42,14,4,43,15],[4,133,107],[8,59,37,1,60,38],[8,44,20,4,45,21],[12,33,11,4,34,12],[3,145,115,1,146,116],[4,64,40,5,65,41],[11,36,16,5,37,17],[11,36,12,5,37,13],[5,109,87,1,110,88],[5,65,41,5,66,42],[5,54,24,7,55,25],[11,36,12,7,37,13],[5,122,98,1,123,99],[7,73,45,3,74,46],[15,43,19,2,44,20],[3,45,15,13,46,16],[1,135,107,5,136,108],[10,74,46,1,75,47],[1,50,22,15,51,23],[2,42,14,17,43,15],[5,150,120,1,151,121],[9,69,43,4,70,44],[17,50,22,1,51,23],[2,42,14,19,43,15],[3,141,113,4,142,114],[3,70,44,11,71,45],[17,47,21,4,48,22],[9,39,13,16,40,14],[3,135,107,5,136,108],[3,67,41,13,68,42],[15,54,24,5,55,25],[15,43,15,10,44,16],[4,144,116,4,145,117],[17,68,42],[17,50,22,6,51,23],[19,46,16,6,47,17],[2,139,111,7,140,112],[17,74,46],[7,54,24,16,55,25],[34,37,13],[4,151,121,5,152,122],[4,75,47,14,76,48],[11,54,24,14,55,25],[16,45,15,14,46,16],[6,147,117,4,148,118],[6,73,45,14,74,46],[11,54,24,16,55,25],[30,46,16,2,47,17],[8,132,106,4,133,107],[8,75,47,13,76,48],[7,54,24,22,55,25],[22,45,15,13,46,16],[10,142,114,2,143,115],[19,74,46,4,75,47],[28,50,22,6,51,23],[33,46,16,4,47,17],[8,152,122,4,153,123],[22,73,45,3,74,46],[8,53,23,26,54,24],[12,45,15,28,46,16],[3,147,117,10,148,118],[3,73,45,23,74,46],[4,54,24,31,55,25],[11,45,15,31,46,16],[7,146,116,7,147,117],[21,73,45,7,74,46],[1,53,23,37,54,24],[19,45,15,26,46,16],[5,145,115,10,146,116],[19,75,47,10,76,48],[15,54,24,25,55,25],[23,45,15,25,46,16],[13,145,115,3,146,116],[2,74,46,29,75,47],[42,54,24,1,55,25],[23,45,15,28,46,16],[17,145,115],[10,74,46,23,75,47],[10,54,24,35,55,25],[19,45,15,35,46,16],[17,145,115,1,146,116],[14,74,46,21,75,47],[29,54,24,19,55,25],[11,45,15,46,46,16],[13,145,115,6,146,116],[14,74,46,23,75,47],[44,54,24,7,55,25],[59,46,16,1,47,17],[12,151,121,7,152,122],[12,75,47,26,76,48],[39,54,24,14,55,25],[22,45,15,41,46,16],[6,151,121,14,152,122],[6,75,47,34,76,48],[46,54,24,10,55,25],[2,45,15,64,46,16],[17,152,122,4,153,123],[29,74,46,14,75,47],[49,54,24,10,55,25],[24,45,15,46,46,16],[4,152,122,18,153,123],[13,74,46,32,75,47],[48,54,24,14,55,25],[42,45,15,32,46,16],[20,147,117,4,148,118],[40,75,47,7,76,48],[43,54,24,22,55,25],[10,45,15,67,46,16],[19,148,118,6,149,119],[18,75,47,31,76,48],[34,54,24,34,55,25],[20,45,15,61,46,16]],(A={}).getRSBlocks=function(t,r){var e=function(t,r){switch(r){case y.L:return k[4*(t-1)+0];case y.M:return k[4*(t-1)+1];case y.Q:return k[4*(t-1)+2];case y.H:return k[4*(t-1)+3];default:return}}(t,r);if(void 0===e)throw"bad rs block @ typeNumber:"+t+"/errorCorrectionLevel:"+r;for(var n,o,i=e.length/3,a=[],u=0;u<i;u+=1)for(var f=e[3*u+0],c=e[3*u+1],g=e[3*u+2],l=0;l<f;l+=1)a.push((n=g,o=void 0,(o={}).totalCount=c,o.dataCount=n,o));return a},A),M=function(){var e=[],n=0,o={getBuffer:function(){return e},getAt:function(t){var r=Math.floor(t/8);return 1==(e[r]>>>7-t%8&1)},put:function(t,r){for(var e=0;e<r;e+=1)o.putBit(1==(t>>>r-e-1&1))},getLengthInBits:function(){return n},putBit:function(t){var r=Math.floor(n/8);e.length<=r&&e.push(0),t&&(e[r]|=128>>>n%8),n+=1}};return o},x=function(t){var r=a,n=t,e={getMode:function(){return r},getLength:function(t){return n.length},write:function(t){for(var r=n,e=0;e+2<r.length;)t.put(o(r.substring(e,e+3)),10),e+=3;e<r.length&&(r.length-e==1?t.put(o(r.substring(e,e+1)),4):r.length-e==2&&t.put(o(r.substring(e,e+2)),7))}},o=function(t){for(var r=0,e=0;e<t.length;e+=1)r=10*r+i(t.charAt(e));return r},i=function(t){if("0"<=t&&t<="9")return t.charCodeAt(0)-"0".charCodeAt(0);throw"illegal char :"+t};return e},m=function(t){var r=u,n=t,e={getMode:function(){return r},getLength:function(t){return n.length},write:function(t){for(var r=n,e=0;e+1<r.length;)t.put(45*o(r.charAt(e))+o(r.charAt(e+1)),11),e+=2;e<r.length&&t.put(o(r.charAt(e)),6)}},o=function(t){if("0"<=t&&t<="9")return t.charCodeAt(0)-"0".charCodeAt(0);if("A"<=t&&t<="Z")return t.charCodeAt(0)-"A".charCodeAt(0)+10;switch(t){case" ":return 36;case"$":return 37;case"%":return 38;case"*":return 39;case"+":return 40;case"-":return 41;case".":return 42;case"/":return 43;case":":return 44;default:throw"illegal char :"+t}};return e},L=function(t){var r=o,e=i.stringToBytes(t),n={getMode:function(){return r},getLength:function(t){return e.length},write:function(t){for(var r=0;r<e.length;r+=1)t.put(e[r],8)}};return n},D=function(t){var r=f,e=i.stringToBytesFuncs.SJIS;if(!e)throw"sjis not supported.";!function(){var t=e("友");if(2!=t.length||38726!=(t[0]<<8|t[1]))throw"sjis not supported."}();var o=e(t),n={getMode:function(){return r},getLength:function(t){return~~(o.length/2)},write:function(t){for(var r=o,e=0;e+1<r.length;){var n=(255&r[e])<<8|255&r[e+1];if(33088<=n&&n<=40956)n-=33088;else{if(!(57408<=n&&n<=60351))throw"illegal char at "+(e+1)+"/"+n;n-=49472}n=192*(n>>>8&255)+(255&n),t.put(n,13),e+=2}if(e<r.length)throw"illegal char at "+(e+1)}};return n},S=function(t){var e=t,n=0,o=0,i=0,r={read:function(){for(;i<8;){if(n>=e.length){if(0==i)return-1;throw"unexpected end of file./"+i}var t=e.charAt(n);if(n+=1,"="==t)return i=0,-1;t.match(/^\s$/)||(o=o<<6|a(t.charCodeAt(0)),i+=6)}var r=o>>>i-8&255;return i-=8,r}},a=function(t){if(65<=t&&t<=90)return t-65;if(97<=t&&t<=122)return t-97+26;if(48<=t&&t<=57)return t-48+52;if(43==t)return 62;if(47==t)return 63;throw"c:"+t};return r},I=function(t,r,e){for(var n=function(t,r){var n=t,o=r,l=new Array(t*r),e={setPixel:function(t,r,e){l[r*n+t]=e},write:function(t){t.writeString("GIF87a"),t.writeShort(n),t.writeShort(o),t.writeByte(128),t.writeByte(0),t.writeByte(0),t.writeByte(0),t.writeByte(0),t.writeByte(0),t.writeByte(255),t.writeByte(255),t.writeByte(255),t.writeString(","),t.writeShort(0),t.writeShort(0),t.writeShort(n),t.writeShort(o),t.writeByte(0);var r=i(2);t.writeByte(2);for(var e=0;255<r.length-e;)t.writeByte(255),t.writeBytes(r,e,255),e+=255;t.writeByte(r.length-e),t.writeBytes(r,e,r.length-e),t.writeByte(0),t.writeString(";")}},i=function(t){for(var r=1<<t,e=1+(1<<t),n=t+1,o=h(),i=0;i<r;i+=1)o.add(String.fromCharCode(i));o.add(String.fromCharCode(r)),o.add(String.fromCharCode(e));var a=p(),u=function(t){var e=t,n=0,o=0,r={write:function(t,r){if(t>>>r!=0)throw"length over";for(;8<=n+r;)e.writeByte(255&(t<<n|o)),r-=8-n,t>>>=8-n,n=o=0;o|=t<<n,n+=r},flush:function(){0<n&&e.writeByte(o)}};return r}(a);u.write(r,n);var f=0,c=String.fromCharCode(l[f]);for(f+=1;f<l.length;){var g=String.fromCharCode(l[f]);f+=1,o.contains(c+g)?c+=g:(u.write(o.indexOf(c),n),o.size()<4095&&(o.size()==1<<n&&(n+=1),o.add(c+g)),c=g)}return u.write(o.indexOf(c),n),u.write(e,n),u.flush(),a.toByteArray()},h=function(){var r={},e=0,n={add:function(t){if(n.contains(t))throw"dup key:"+t;r[t]=e,e+=1},size:function(){return e},indexOf:function(t){return r[t]},contains:function(t){return void 0!==r[t]}};return n};return e}(t,r),o=0;o<r;o+=1)for(var i=0;i<t;i+=1)n.setPixel(i,o,e(i,o));var a=p();n.write(a);for(var u=function(){function e(t){a+=String.fromCharCode(r(63&t))}var n=0,o=0,i=0,a="",t={},r=function(t){if(t<0);else{if(t<26)return 65+t;if(t<52)return t-26+97;if(t<62)return t-52+48;if(62==t)return 43;if(63==t)return 47}throw"n:"+t};return t.writeByte=function(t){for(n=n<<8|255&t,o+=8,i+=1;6<=o;)e(n>>>o-6),o-=6},t.flush=function(){if(0<o&&(e(n<<6-o),o=n=0),i%3!=0)for(var t=3-i%3,r=0;r<t;r+=1)a+="="},t.toString=function(){return a},t}(),f=a.toByteArray(),c=0;c<f.length;c+=1)u.writeByte(f[c]);return u.flush(),"data:image/gif;base64,"+u};return i}();qrcode.stringToBytesFuncs["UTF-8"]=function(t){return function(t){for(var r=[],e=0;e<t.length;e++){var n=t.charCodeAt(e);n<128?r.push(n):n<2048?r.push(192|n>>6,128|63&n):n<55296||57344<=n?r.push(224|n>>12,128|n>>6&63,128|63&n):(e++,n=65536+((1023&n)<<10|1023&t.charCodeAt(e)),r.push(240|n>>18,128|n>>12&63,128|n>>6&63,128|63&n))}return r}(t)},function(t){"function"==typeof define&&define.amd?define([],t):"object"==typeof exports&&(module.exports=t())}(function(){return qrcode});</script>
+<script>
+(() => {
+  const bare = document.documentElement.classList.contains('bare');
+  const W = bare ? 2100 : 2260, H = bare ? 3536 : 3696;
+  const screen = document.getElementById('screen');
+  const $ = (s, r = screen) => r.querySelector(s);
+  const $$ = (s, r = screen) => [...r.querySelectorAll(s)];
+
+  /* ── Data ─────────────────────────────────────────────────────────── */
+  const EVENTS = {
+    cookies:  { emoji: '😄', listEmoji: '🍪', title: 'Cooookiesss!', listTitle: 'Homemade Coooookies!', host: { name: 'Maya Okafor', role: 'Product Designer', color: '#fe8a01' }, desc: 'Grab some homemade cookies that can elevate your pitching skills', time: '9:30 AM', place: 'Room 307', floor: 3, plan: [922, 267], mini: [414.4, 23.85] },
+    hotdogs:  { emoji: '🌭', title: 'Hot Dogs', host: { name: 'Daniel Reyes', role: 'Office Manager', color: '#01a4f8' }, desc: 'Extra New York Hot dogs here. Come grab one if you missed the breakfast.', time: '8:30 AM', place: '3rd floor cafe', placeSize: 60, floor: 3, plan: [1325, 452], mini: [853, 46] },
+    rage:     { emoji: '😡', title: 'Rage baiting', host: { name: 'Sam Whitfield', role: 'Staff Engineer', color: '#0f172a' }, desc: 'Come try me!!', time: '7:30 PM', place: 'Room 305', floor: 3, plan: [1015, 1306], mini: [1140.19, 350.34] },
+    movie:    { emoji: '🎥', title: 'Movie Night!', host: { name: 'Priya Nair', role: 'Social Committee Lead', color: '#fe8a01' }, desc: 'Star Wars The Last Jedi Tonight! Don’t forget popcorn and drinks!', time: '10:30 PM', place: 'Room 302', floor: 3, plan: [209, 1541], mini: [675.06, 660] },
+    tea:      { emoji: '☕️', title: 'Tea time', host: { name: 'Hana Kim', role: 'People & Culture Partner', color: '#01a4f8' }, desc: 'Loose leaf, warm biscuits and ten quiet minutes before stand-up.', time: '7:30 AM', place: 'Room 205', floor: 2, plan: [1015, 1306] },
+    birthday: { emoji: '🥳', title: 'Jiwan’s Birthday', host: { name: 'Leo Martins', role: 'Frontend Engineer, Jiwan’s team', color: '#fe8a01' }, desc: 'Cake in the lounge. Sign the card on your way in!', time: '7:30 PM', place: '2nd floor lounge', placeSize: 53, floor: 2, plan: [209, 1541] },
+    kittens:  { emoji: '😹', title: 'Exploding Kittens', host: { name: 'Aisha Bello', role: 'QA Analyst', color: '#0f172a' }, desc: 'Card game showdown. Bring your best poker face and a defuse.', time: '3:30 PM', place: 'Room 214', floor: 2, plan: [540, 1090] },
+    mario:    { emoji: '🎮', title: 'Mario Kart Finale!', listTitle: 'Mario Kart 8 Grand Finale!', host: { name: 'Tom Chen', role: 'Head of Platform', color: '#01a4f8' }, desc: 'Final four on the big screen. Blue shells are fair game.', time: '8:30 PM', place: 'Room 134', floor: 1, plan: [1015, 1306] },
+  };
+  const TODAY = ['tea', 'hotdogs', 'cookies', 'kittens', 'birthday', 'mario'];
+
+  /* plan point → isometric point on a floor (same transform the slab uses) */
+  const LEVEL_CENTER = { 3: [815.1, 559.57], 2: [815.1, 1186], 1: [815.1, 1812.44] };
+  const PLAN_CENTER = [840.9, 1187], PLAN_SCALE = 1.718;
+  function toIso(level, x, y) {
+    let lx = (x - PLAN_CENTER[0]) / PLAN_SCALE, ly = (y - PLAN_CENTER[1]) / PLAN_SCALE;
+    ly *= 0.92;                                        // scaleY
+    lx += Math.tan(22.42 * Math.PI / 180) * ly;      // skewX
+    const a = -33.69 * Math.PI / 180;                  // rotate
+    const rx = lx * Math.cos(a) - ly * Math.sin(a), ry = lx * Math.sin(a) + ly * Math.cos(a);
+    return [rx + LEVEL_CENTER[level][0], ry + LEVEL_CENTER[level][1]];
+  }
+
+  /* ── State ────────────────────────────────────────────────────────── */
+  const state = { view: 'idle', floor: 3, event: null, sheet: false };
+
+  /* ── Render: mini pins on the exploded floors ─────────────────────── */
+  for (const level of [1, 2, 3]) {
+    const host = $(`.L${level} .mini-pins`);
+    Object.entries(EVENTS).filter(([, e]) => e.floor === level).forEach(([id, e], i) => {
+      let [x, y] = e.mini || (() => { const [tx, ty] = toIso(level, e.plan[0] + 108.2, e.plan[1] + 224); return [tx - 90.2, ty - 185]; })();
+      const el = document.createElement('div');
+      el.className = 'mini-pin';
+      el.style.cssText = `left:${x}px;top:${y}px;--pd:${650 + i * 70 + (3 - level) * 90}ms`;
+      el.innerHTML = `<img src="data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9IjEzMCIgaGVpZ2h0PSIxODQuOTk5IiB2aWV3Qm94PSIwIDAgMTMwIDE4NC45OTkiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxwYXRoIGlkPSJVbmlvbiIgZD0iTTY1IDBDMTAwLjg5OSAwIDEzMCAyOS4xMDE1IDEzMCA2NUMxMzAgNzcuMjgxNiAxMjYuNTkzIDg4Ljc2NzIgMTIwLjY3NCA5OC41NjQ1TDczLjY2MDIgMTc5Ljk5OUM2OS44MTEyIDE4Ni42NjYgNjAuMTg4OCAxODYuNjY2IDU2LjMzOTggMTc5Ljk5OUw5LjMyNTIgOTguNTY0NUMzLjQwNjEgODguNzY3MiAwIDc3LjI4MTQgMCA2NUMwIDI5LjEwMTUgMjkuMTAxNSAwIDY1IDBaIiBmaWxsPSJ3aGl0ZSIvPgo8L3N2Zz4K" alt=""><span>${e.emoji}</span>`;
+      el.setAttribute('role', 'button');
+      el.setAttribute('aria-label', e.title);
+      el.addEventListener('click', ev => { ev.stopPropagation(); openPlan(level, id); });
+      host.appendChild(el);
+    });
+  }
+
+  /* ── Render: Events of the Day grid ───────────────────────────────── */
+  const grid = $('#grid');
+  TODAY.forEach((id, i) => {
+    const e = EVENTS[id];
+    const b = document.createElement('button');
+    b.className = 'ev';
+    b.style.setProperty('--i', i);
+    b.innerHTML = `<div class="face"><h4>${e.listTitle || e.title}</h4><div class="tiles"><div class="t time">${e.time}</div><div class="t place">${e.place}</div></div><div class="where"><span>Floor <b>${e.floor}</b></span><span>Show on map →</span></div></div><div class="em" aria-hidden="true">${e.listEmoji || e.emoji}</div>`;
+    b.addEventListener('click', () => { closeSheet(); setTimeout(() => openPlan(e.floor, id), 380); });
+    grid.appendChild(b);
+  });
+  // keep tiles aligned across each row (Figma nudges single-line titles to match)
+  document.fonts.ready.then(() => {
+    const cards = $$('.ev h4', grid);
+    for (let r = 0; r < cards.length; r += 2) {
+      const pair = cards.slice(r, r + 2), h = Math.max(...pair.map(c => c.offsetHeight));
+      pair.forEach(c => c.style.minHeight = h + 'px');
+    }
+  });
+
+  /* ── Render: floor plan pins + popover card ───────────────────────── */
+  const pinsHost = $('#pins');
+  const BUBBLE = { left: 'data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9IjExNjkiIGhlaWdodD0iNzUwLjg1MyIgdmlld0JveD0iMCAwIDExNjkgNzUwLjg1MyIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGcgaWQ9IlVuaW9uIiBmaWx0ZXI9InVybCgjZmlsdGVyMF9kXzBfNDQpIj4KPHBhdGggZD0iTTExMjYuOTEgMjcuOTk4M0MxMTMzLjM3IDIyLjMzMzkgMTE0My41IDI2LjkyNDggMTE0My41IDM1LjUxOTdWNzEwLjM1M0MxMTQzLjUgNzE4LjYzNyAxMTM2Ljc4IDcyNS4zNTMgMTEyOC41IDcyNS4zNTNINDAuNUMzMi4yMTU4IDcyNS4zNTMgMjUuNTAwMSA3MTguNjM3IDI1LjUgNzEwLjM1M1Y2NS43NDgzQzI1LjUgNTcuNDY0IDMyLjIxNTcgNTAuNzQ4MyA0MC41IDUwLjc0ODNIMTEwMC45NUwxMTI2LjkxIDI3Ljk5ODNaIiBmaWxsPSJ3aGl0ZSIvPgo8L2c+CjxkZWZzPgo8ZmlsdGVyIGlkPSJmaWx0ZXIwX2RfMF80NCIgeD0iMCIgeT0iLTguNDA5NjdlLTA5IiB3aWR0aD0iMTE2OSIgaGVpZ2h0PSI3NTAuODUzIiBmaWx0ZXJVbml0cz0idXNlclNwYWNlT25Vc2UiIGNvbG9yLWludGVycG9sYXRpb24tZmlsdGVycz0ic1JHQiI+CjxmZUZsb29kIGZsb29kLW9wYWNpdHk9IjAiIHJlc3VsdD0iQmFja2dyb3VuZEltYWdlRml4Ii8+CjxmZUNvbG9yTWF0cml4IGluPSJTb3VyY2VBbHBoYSIgdHlwZT0ibWF0cml4IiB2YWx1ZXM9IjAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDEyNyAwIiByZXN1bHQ9ImhhcmRBbHBoYSIvPgo8ZmVNb3JwaG9sb2d5IHJhZGl1cz0iNSIgb3BlcmF0b3I9ImRpbGF0ZSIgaW49IlNvdXJjZUFscGhhIiByZXN1bHQ9ImVmZmVjdDFfZHJvcFNoYWRvd18wXzQ0Ii8+CjxmZU9mZnNldC8+CjxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjEwLjI1Ii8+CjxmZUNvbXBvc2l0ZSBpbjI9ImhhcmRBbHBoYSIgb3BlcmF0b3I9Im91dCIvPgo8ZmVDb2xvck1hdHJpeCB0eXBlPSJtYXRyaXgiIHZhbHVlcz0iMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMC4xMSAwIi8+CjxmZUJsZW5kIG1vZGU9Im5vcm1hbCIgaW4yPSJCYWNrZ3JvdW5kSW1hZ2VGaXgiIHJlc3VsdD0iZWZmZWN0MV9kcm9wU2hhZG93XzBfNDQiLz4KPGZlQmxlbmQgbW9kZT0ibm9ybWFsIiBpbj0iU291cmNlR3JhcGhpYyIgaW4yPSJlZmZlY3QxX2Ryb3BTaGFkb3dfMF80NCIgcmVzdWx0PSJzaGFwZSIvPgo8L2ZpbHRlcj4KPC9kZWZzPgo8L3N2Zz4K', right: 'data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9IjExODkiIGhlaWdodD0iNzI2IiB2aWV3Qm94PSIwIDAgMTE4OSA3MjYiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGlkPSJVbmlvbiIgZmlsdGVyPSJ1cmwoI2ZpbHRlcjBfZF8wXzI4OCkiPgo8cGF0aCBkPSJNMTgyLjM4IDI1Ljk1NTFIMTE0OC41QzExNTYuNzggMjUuOTU1MSAxMTYzLjUgMzIuNjcwOSAxMTYzLjUgNDAuOTU1MVY2ODUuNUMxMTYzLjUgNjkzLjc4NCAxMTU2Ljc4IDcwMC41IDExNDguNSA3MDAuNUg2MC40OTNDNTIuMjA4OCA3MDAuNSA0NS40OTMxIDY5My43ODQgNDUuNDkzIDY4NS41VjYyLjE3NzhMMjcuOTc4MyA0Mi4wNjY1QzIyLjMzMzggMzUuNTg0OSAyNi45NTU1IDI1LjQ3MzYgMzUuNTUwNiAyNS41MDAxTDE4Mi4zOCAyNS45NTUxWiIgZmlsbD0id2hpdGUiLz4KPC9nPgo8ZGVmcz4KPGZpbHRlciBpZD0iZmlsdGVyMF9kXzBfMjg4IiB4PSItNC4yODMyNGUtMDgiIHk9IjAiIHdpZHRoPSIxMTg5IiBoZWlnaHQ9IjcyNiIgZmlsdGVyVW5pdHM9InVzZXJTcGFjZU9uVXNlIiBjb2xvci1pbnRlcnBvbGF0aW9uLWZpbHRlcnM9InNSR0IiPgo8ZmVGbG9vZCBmbG9vZC1vcGFjaXR5PSIwIiByZXN1bHQ9IkJhY2tncm91bmRJbWFnZUZpeCIvPgo8ZmVDb2xvck1hdHJpeCBpbj0iU291cmNlQWxwaGEiIHR5cGU9Im1hdHJpeCIgdmFsdWVzPSIwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAxMjcgMCIgcmVzdWx0PSJoYXJkQWxwaGEiLz4KPGZlTW9ycGhvbG9neSByYWRpdXM9IjUiIG9wZXJhdG9yPSJkaWxhdGUiIGluPSJTb3VyY2VBbHBoYSIgcmVzdWx0PSJlZmZlY3QxX2Ryb3BTaGFkb3dfMF8yODgiLz4KPGZlT2Zmc2V0Lz4KPGZlR2F1c3NpYW5CbHVyIHN0ZERldmlhdGlvbj0iMTAuMjUiLz4KPGZlQ29tcG9zaXRlIGluMj0iaGFyZEFscGhhIiBvcGVyYXRvcj0ib3V0Ii8+CjxmZUNvbG9yTWF0cml4IHR5cGU9Im1hdHJpeCIgdmFsdWVzPSIwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwLjExIDAiLz4KPGZlQmxlbmQgbW9kZT0ibm9ybWFsIiBpbjI9IkJhY2tncm91bmRJbWFnZUZpeCIgcmVzdWx0PSJlZmZlY3QxX2Ryb3BTaGFkb3dfMF8yODgiLz4KPGZlQmxlbmQgbW9kZT0ibm9ybWFsIiBpbj0iU291cmNlR3JhcGhpYyIgaW4yPSJlZmZlY3QxX2Ryb3BTaGFkb3dfMF8yODgiIHJlc3VsdD0ic2hhcGUiLz4KPC9maWx0ZXI+CjwvZGVmcz4KPC9zdmc+Cg==' };
+  function cardHTML(id) {
+    const e = EVENTS[id], side = e.plan[0] < 700 ? 'right' : 'left';
+    return `<div class="card ${side}" data-card="${id}" style="left:${e.plan[0]}px;top:${e.plan[1]}px">
+      <img class="bubble" src="${BUBBLE[side]}" alt="">
+      <div class="body">
+        <div class="title-row"><span class="em">${e.emoji}</span><h3>${e.title}</h3><button class="x" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="#0f172a" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+        <div class="faces">
+          <div class="info">
+            <div class="host"><span class="av" style="background:${e.host.color}">${e.host.name.split(' ').map(w => w[0]).join('')}</span><div class="who"><span class="by">Hosted by</span><span class="name">${e.host.name} <span>· ${e.host.role}</span></span></div></div>
+            <p class="desc">${e.desc}</p>
+            <div class="tiles">
+              <div class="tile"><div class="label"><img src="data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiB2aWV3Qm94PSIwIDAgMzIgMzIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGlkPSJjYWxlbmRhcl9tb250aCI+CjxtYXNrIGlkPSJtYXNrMF8wXzI2MCIgc3R5bGU9Im1hc2stdHlwZTphbHBoYSIgbWFza1VuaXRzPSJ1c2VyU3BhY2VPblVzZSIgeD0iMCIgeT0iMCIgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIj4KPHJlY3QgaWQ9IkJvdW5kaW5nIGJveCIgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiBmaWxsPSIjRDlEOUQ5Ii8+CjwvbWFzaz4KPGcgbWFzaz0idXJsKCNtYXNrMF8wXzI2MCkiPgo8cGF0aCBpZD0iY2FsZW5kYXJfbW9udGhfMiIgZD0iTTYuNjY2NjcgMjkuMzMzM0M1LjkzMzMzIDI5LjMzMzMgNS4zMDU1NiAyOS4wNzIyIDQuNzgzMzMgMjguNTVDNC4yNjExMSAyOC4wMjc4IDQgMjcuNCA0IDI2LjY2NjdWOEM0IDcuMjY2NjcgNC4yNjExMSA2LjYzODg5IDQuNzgzMzMgNi4xMTY2N0M1LjMwNTU2IDUuNTk0NDQgNS45MzMzMyA1LjMzMzMzIDYuNjY2NjcgNS4zMzMzM0g4VjIuNjY2NjdIMTAuNjY2N1Y1LjMzMzMzSDIxLjMzMzNWMi42NjY2N0gyNFY1LjMzMzMzSDI1LjMzMzNDMjYuMDY2NyA1LjMzMzMzIDI2LjY5NDQgNS41OTQ0NCAyNy4yMTY3IDYuMTE2NjdDMjcuNzM4OSA2LjYzODg5IDI4IDcuMjY2NjcgMjggOFYyNi42NjY3QzI4IDI3LjQgMjcuNzM4OSAyOC4wMjc4IDI3LjIxNjcgMjguNTVDMjYuNjk0NCAyOS4wNzIyIDI2LjA2NjcgMjkuMzMzMyAyNS4zMzMzIDI5LjMzMzNINi42NjY2N1pNNi42NjY2NyAyNi42NjY3SDI1LjMzMzNWMTMuMzMzM0g2LjY2NjY3VjI2LjY2NjdaTTYuNjY2NjcgMTAuNjY2N0gyNS4zMzMzVjhINi42NjY2N1YxMC42NjY3Wk0xNiAxOC42NjY3QzE1LjYyMjIgMTguNjY2NyAxNS4zMDU2IDE4LjUzODkgMTUuMDUgMTguMjgzM0MxNC43OTQ0IDE4LjAyNzggMTQuNjY2NyAxNy43MTExIDE0LjY2NjcgMTcuMzMzM0MxNC42NjY3IDE2Ljk1NTYgMTQuNzk0NCAxNi42Mzg5IDE1LjA1IDE2LjM4MzNDMTUuMzA1NiAxNi4xMjc4IDE1LjYyMjIgMTYgMTYgMTZDMTYuMzc3OCAxNiAxNi42OTQ0IDE2LjEyNzggMTYuOTUgMTYuMzgzM0MxNy4yMDU2IDE2LjYzODkgMTcuMzMzMyAxNi45NTU2IDE3LjMzMzMgMTcuMzMzM0MxNy4zMzMzIDE3LjcxMTEgMTcuMjA1NiAxOC4wMjc4IDE2Ljk1IDE4LjI4MzNDMTYuNjk0NCAxOC41Mzg5IDE2LjM3NzggMTguNjY2NyAxNiAxOC42NjY3Wk05LjcxNjY3IDE4LjI4MzNDOS40NjExMSAxOC4wMjc4IDkuMzMzMzMgMTcuNzExMSA5LjMzMzMzIDE3LjMzMzNDOS4zMzMzMyAxNi45NTU2IDkuNDYxMTEgMTYuNjM4OSA5LjcxNjY3IDE2LjM4MzNDOS45NzIyMiAxNi4xMjc4IDEwLjI4ODkgMTYgMTAuNjY2NyAxNkMxMS4wNDQ0IDE2IDExLjM2MTEgMTYuMTI3OCAxMS42MTY3IDE2LjM4MzNDMTEuODcyMiAxNi42Mzg5IDEyIDE2Ljk1NTYgMTIgMTcuMzMzM0MxMiAxNy43MTExIDExLjg3MjIgMTguMDI3OCAxMS42MTY3IDE4LjI4MzNDMTEuMzYxMSAxOC41Mzg5IDExLjA0NDQgMTguNjY2NyAxMC42NjY3IDE4LjY2NjdDMTAuMjg4OSAxOC42NjY3IDkuOTcyMjIgMTguNTM4OSA5LjcxNjY3IDE4LjI4MzNaTTIxLjMzMzMgMTguNjY2N0MyMC45NTU2IDE4LjY2NjcgMjAuNjM4OSAxOC41Mzg5IDIwLjM4MzMgMTguMjgzM0MyMC4xMjc4IDE4LjAyNzggMjAgMTcuNzExMSAyMCAxNy4zMzMzQzIwIDE2Ljk1NTYgMjAuMTI3OCAxNi42Mzg5IDIwLjM4MzMgMTYuMzgzM0MyMC42Mzg5IDE2LjEyNzggMjAuOTU1NiAxNiAyMS4zMzMzIDE2QzIxLjcxMTEgMTYgMjIuMDI3OCAxNi4xMjc4IDIyLjI4MzMgMTYuMzgzM0MyMi41Mzg5IDE2LjYzODkgMjIuNjY2NyAxNi45NTU2IDIyLjY2NjcgMTcuMzMzM0MyMi42NjY3IDE3LjcxMTEgMjIuNTM4OSAxOC4wMjc4IDIyLjI4MzMgMTguMjgzM0MyMi4wMjc4IDE4LjUzODkgMjEuNzExMSAxOC42NjY3IDIxLjMzMzMgMTguNjY2N1pNMTYgMjRDMTUuNjIyMiAyNCAxNS4zMDU2IDIzLjg3MjIgMTUuMDUgMjMuNjE2N0MxNC43OTQ0IDIzLjM2MTEgMTQuNjY2NyAyMy4wNDQ0IDE0LjY2NjcgMjIuNjY2N0MxNC42NjY3IDIyLjI4ODkgMTQuNzk0NCAyMS45NzIyIDE1LjA1IDIxLjcxNjdDMTUuMzA1NiAyMS40NjExIDE1LjYyMjIgMjEuMzMzMyAxNiAyMS4zMzMzQzE2LjM3NzggMjEuMzMzMyAxNi42OTQ0IDIxLjQ2MTEgMTYuOTUgMjEuNzE2N0MxNy4yMDU2IDIxLjk3MjIgMTcuMzMzMyAyMi4yODg5IDE3LjMzMzMgMjIuNjY2N0MxNy4zMzMzIDIzLjA0NDQgMTcuMjA1NiAyMy4zNjExIDE2Ljk1IDIzLjYxNjdDMTYuNjk0NCAyMy44NzIyIDE2LjM3NzggMjQgMTYgMjRaTTkuNzE2NjcgMjMuNjE2N0M5LjQ2MTExIDIzLjM2MTEgOS4zMzMzMyAyMy4wNDQ0IDkuMzMzMzMgMjIuNjY2N0M5LjMzMzMzIDIyLjI4ODkgOS40NjExMSAyMS45NzIyIDkuNzE2NjcgMjEuNzE2N0M5Ljk3MjIyIDIxLjQ2MTEgMTAuMjg4OSAyMS4zMzMzIDEwLjY2NjcgMjEuMzMzM0MxMS4wNDQ0IDIxLjMzMzMgMTEuMzYxMSAyMS40NjExIDExLjYxNjcgMjEuNzE2N0MxMS44NzIyIDIxLjk3MjIgMTIgMjIuMjg4OSAxMiAyMi42NjY3QzEyIDIzLjA0NDQgMTEuODcyMiAyMy4zNjExIDExLjYxNjcgMjMuNjE2N0MxMS4zNjExIDIzLjg3MjIgMTEuMDQ0NCAyNCAxMC42NjY3IDI0QzEwLjI4ODkgMjQgOS45NzIyMiAyMy44NzIyIDkuNzE2NjcgMjMuNjE2N1pNMjEuMzMzMyAyNEMyMC45NTU2IDI0IDIwLjYzODkgMjMuODcyMiAyMC4zODMzIDIzLjYxNjdDMjAuMTI3OCAyMy4zNjExIDIwIDIzLjA0NDQgMjAgMjIuNjY2N0MyMCAyMi4yODg5IDIwLjEyNzggMjEuOTcyMiAyMC4zODMzIDIxLjcxNjdDMjAuNjM4OSAyMS40NjExIDIwLjk1NTYgMjEuMzMzMyAyMS4zMzMzIDIxLjMzMzNDMjEuNzExMSAyMS4zMzMzIDIyLjAyNzggMjEuNDYxMSAyMi4yODMzIDIxLjcxNjdDMjIuNTM4OSAyMS45NzIyIDIyLjY2NjcgMjIuMjg4OSAyMi42NjY3IDIyLjY2NjdDMjIuNjY2NyAyMy4wNDQ0IDIyLjUzODkgMjMuMzYxMSAyMi4yODMzIDIzLjYxNjdDMjIuMDI3OCAyMy44NzIyIDIxLjcxMTEgMjQgMjEuMzMzMyAyNFoiIGZpbGw9IiMxQzFCMUYiLz4KPC9nPgo8L2c+Cjwvc3ZnPgo=" alt="">Time</div><div class="value">Feb 22, ${e.time}</div></div>
+              <div class="tile"><div class="label"><img src="data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiB2aWV3Qm94PSIwIDAgMzIgMzIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGlkPSJkaXN0YW5jZSI+CjxtYXNrIGlkPSJtYXNrMF8wXzI1NyIgc3R5bGU9Im1hc2stdHlwZTphbHBoYSIgbWFza1VuaXRzPSJ1c2VyU3BhY2VPblVzZSIgeD0iMCIgeT0iMCIgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIj4KPHJlY3QgaWQ9IkJvdW5kaW5nIGJveCIgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiBmaWxsPSIjRDlEOUQ5Ii8+CjwvbWFzaz4KPGcgbWFzaz0idXJsKCNtYXNrMF8wXzI1NykiPgo8cGF0aCBpZD0iZGlzdGFuY2VfMiIgZD0iTTEwLjIzMjUgMjguMjE2M0M4Ljc0MzYxIDI3LjQ3MTkgNy45OTkxNyAyNi41MTA4IDcuOTk5MTcgMjUuMzMzQzcuOTk5MTcgMjQuNzk5NyA4LjE2MDI4IDI0LjMwNTIgOC40ODI1IDIzLjg0OTdDOC44MDQ3MiAyMy4zOTQxIDkuMjU0NzIgMjIuOTk5NyA5LjgzMjUgMjIuNjY2M0wxMS45MzI1IDI0LjYzM0MxMS43MzI1IDI0LjcyMTkgMTEuNTE1OCAyNC44MjE5IDExLjI4MjUgMjQuOTMzQzExLjA0OTIgMjUuMDQ0MSAxMC44NjU4IDI1LjE3NzQgMTAuNzMyNSAyNS4zMzNDMTEuMDIxNCAyNS42ODg2IDExLjY4ODEgMjUuOTk5NyAxMi43MzI1IDI2LjI2NjNDMTMuNzc2OSAyNi41MzMgMTQuODY1OCAyNi42NjYzIDE1Ljk5OTIgMjYuNjY2M0MxNy4xMzI1IDI2LjY2NjMgMTguMjI2OSAyNi41MzMgMTkuMjgyNSAyNi4yNjYzQzIwLjMzODEgMjUuOTk5NyAyMS4wMTAzIDI1LjY4ODYgMjEuMjk5MiAyNS4zMzNDMjEuMTQzNiAyNS4xNTUyIDIwLjk0MzYgMjUuMDEwOCAyMC42OTkyIDI0Ljg5OTdDMjAuNDU0NyAyNC43ODg2IDIwLjIyMTQgMjQuNjg4NiAxOS45OTkyIDI0LjU5OTdMMjIuMDY1OCAyMi41OTk3QzIyLjY4ODEgMjIuOTU1MiAyMy4xNjU4IDIzLjM2MDggMjMuNDk5MiAyMy44MTYzQzIzLjgzMjUgMjQuMjcxOSAyMy45OTkyIDI0Ljc3NzQgMjMuOTk5MiAyNS4zMzNDMjMuOTk5MiAyNi41MTA4IDIzLjI1NDcgMjcuNDcxOSAyMS43NjU4IDI4LjIxNjNDMjAuMjc2OSAyOC45NjA4IDE4LjM1NDcgMjkuMzMzIDE1Ljk5OTIgMjkuMzMzQzEzLjY0MzYgMjkuMzMzIDExLjcyMTQgMjguOTYwOCAxMC4yMzI1IDI4LjIxNjNaTTE2LjAzMjUgMjEuOTk5N0MxOC4yMzI1IDIwLjM3NzQgMTkuODg4MSAxOC43NDk3IDIwLjk5OTIgMTcuMTE2M0MyMi4xMTAzIDE1LjQ4MyAyMi42NjU4IDEzLjg0NDEgMjIuNjY1OCAxMi4xOTk3QzIyLjY2NTggOS45MzMgMjEuOTQzNiA4LjIyMTg5IDIwLjQ5OTIgNy4wNjYzM0MxOS4wNTQ3IDUuOTEwNzggMTcuNTU0NyA1LjMzMyAxNS45OTkyIDUuMzMzQzE0LjQ0MzYgNS4zMzMgMTIuOTQzNiA1LjkxMDc4IDExLjQ5OTIgNy4wNjYzM0MxMC4wNTQ3IDguMjIxODkgOS4zMzI1IDkuOTMzIDkuMzMyNSAxMi4xOTk3QzkuMzMyNSAxMy42ODg2IDkuODc2OTUgMTUuMjM4NiAxMC45NjU4IDE2Ljg0OTdDMTIuMDU0NyAxOC40NjA4IDEzLjc0MzYgMjAuMTc3NCAxNi4wMzI1IDIxLjk5OTdaTTE1Ljk5OTIgMjUuMzMzQzEyLjg2NTggMjMuMDIxOSAxMC41MjY5IDIwLjc3NzQgOC45ODI1IDE4LjU5OTdDNy40MzgwNiAxNi40MjE5IDYuNjY1ODMgMTQuMjg4NiA2LjY2NTgzIDEyLjE5OTdDNi42NjU4MyAxMC42MjE5IDYuOTQ5MTcgOS4yMzg1NiA3LjUxNTgzIDguMDQ5NjdDOC4wODI1IDYuODYwNzggOC44MTAyOCA1Ljg2NjMzIDkuNjk5MTcgNS4wNjYzM0MxMC41ODgxIDQuMjY2MzMgMTEuNTg4MSAzLjY2NjMzIDEyLjY5OTIgMy4yNjYzM0MxMy44MTAzIDIuODY2MzMgMTQuOTEwMyAyLjY2NjMzIDE1Ljk5OTIgMi42NjYzM0MxNy4wODgxIDIuNjY2MzMgMTguMTg4MSAyLjg2NjMzIDE5LjI5OTIgMy4yNjYzM0MyMC40MTAzIDMuNjY2MzMgMjEuNDEwMyA0LjI2NjMzIDIyLjI5OTIgNS4wNjYzM0MyMy4xODgxIDUuODY2MzMgMjMuOTE1OCA2Ljg2MDc4IDI0LjQ4MjUgOC4wNDk2N0MyNS4wNDkyIDkuMjM4NTYgMjUuMzMyNSAxMC42MjE5IDI1LjMzMjUgMTIuMTk5N0MyNS4zMzI1IDE0LjI4ODYgMjQuNTYwMyAxNi40MjE5IDIzLjAxNTggMTguNTk5N0MyMS40NzE0IDIwLjc3NzQgMTkuMTMyNSAyMy4wMjE5IDE1Ljk5OTIgMjUuMzMzWk0xNS45OTkyIDE0LjY2NjNDMTYuNzMyNSAxNC42NjYzIDE3LjM2MDMgMTQuNDA1MiAxNy44ODI1IDEzLjg4M0MxOC40MDQ3IDEzLjM2MDggMTguNjY1OCAxMi43MzMgMTguNjY1OCAxMS45OTk3QzE4LjY2NTggMTEuMjY2MyAxOC40MDQ3IDEwLjYzODYgMTcuODgyNSAxMC4xMTYzQzE3LjM2MDMgOS41OTQxMSAxNi43MzI1IDkuMzMzIDE1Ljk5OTIgOS4zMzNDMTUuMjY1OCA5LjMzMyAxNC42MzgxIDkuNTk0MTEgMTQuMTE1OCAxMC4xMTYzQzEzLjU5MzYgMTAuNjM4NiAxMy4zMzI1IDExLjI2NjMgMTMuMzMyNSAxMS45OTk3QzEzLjMzMjUgMTIuNzMzIDEzLjU5MzYgMTMuMzYwOCAxNC4xMTU4IDEzLjg4M0MxNC42MzgxIDE0LjQwNTIgMTUuMjY1OCAxNC42NjYzIDE1Ljk5OTIgMTQuNjY2M1oiIGZpbGw9IiMxQzFCMUYiLz4KPC9nPgo8L2c+Cjwvc3ZnPgo=" alt="">Location</div><div class="value lg" style="${e.placeSize ? `font-size:${e.placeSize}px` : ''}">${e.place}</div></div>
+            </div>
+            <button class="join">Join</button>
+          </div>
+          <div class="qr-face">
+            <div class="qr" role="img" aria-label="QR code: add ${e.title} to your calendar"></div>
+            <div class="scan">Scan to add to your calendar</div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }
+  function renderPlan(floor) {
+    const ids = Object.keys(EVENTS).filter(id => EVENTS[id].floor === floor);
+    pinsHost.innerHTML = ids.map((id, i) => {
+      const e = EVENTS[id];
+      return `<div class="pin enter" data-pin="${id}" role="button" tabindex="0" aria-label="${e.title}" style="left:${e.plan[0]}px;top:${e.plan[1]}px;--pd:${i * 80}ms"><img src="data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9IjE1NiIgaGVpZ2h0PSIyMjMuOTk5IiB2aWV3Qm94PSIwIDAgMTU2IDIyMy45OTkiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxwYXRoIGlkPSJVbmlvbiIgZD0iTTc4IDBDMTIxLjA3OCAwIDE1NiAzNC45MjE4IDE1NiA3OEMxNTYgOTIuNzQxNyAxNTEuOTA5IDEwNi41MjcgMTQ0LjgwMyAxMTguMjg2TDg2LjY2MDIgMjE4Ljk5OUM4Mi44MTEyIDIyNS42NjYgNzMuMTg4OCAyMjUuNjY2IDY5LjMzOTggMjE4Ljk5OUwxMS4xOTYzIDExOC4yODZDNC4wODk5OCAxMDYuNTI3IDAgOTIuNzQxNSAwIDc4QzAgMzQuOTIxOCAzNC45MjE4IDAgNzggMFoiIGZpbGw9IndoaXRlIi8+Cjwvc3ZnPgo=" alt=""><span>${e.emoji}</span></div>`;
+    }).join('') + ids.map(cardHTML).join('');
+    // one-line titles: step the size down until it fits the bubble
+    $$('.card h3', pinsHost).forEach(h => {
+      let size = 100;
+      while (h.scrollWidth > h.clientWidth && size > 60) h.style.fontSize = (size -= 4) + 'px';
+    });
+  }
+  pinsHost.addEventListener('click', ev => {
+    const card = ev.target.closest('.card');
+    if (ev.target.closest('.x')) { ev.stopPropagation(); showCard(null); return; }
+    if (ev.target.closest('.join')) { ev.stopPropagation(); showQR(card); return; }
+    if (ev.target.closest('.card')) { ev.stopPropagation(); return; }
+    const pin = ev.target.closest('.pin');
+    if (pin) { ev.stopPropagation(); showCard(pin.dataset.pin); }
+  });
+  pinsHost.addEventListener('keydown', ev => {
+    const pin = ev.target.closest('.pin');
+    if (pin && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); showCard(pin.dataset.pin); }
+  });
+  $('.plan').addEventListener('click', () => showCard(null));
+
+  function showCard(id) {
+    state.event = id;
+    $$('.pin', pinsHost).forEach(p => { p.classList.remove('enter'); p.classList.toggle('hidden', p.dataset.pin === id); });
+    $$('.card', pinsHost).forEach(c => {
+      const open = c.dataset.card === id;
+      if (!open && c.classList.contains('open')) setTimeout(() => c.classList.remove('show-qr'), 400);
+      c.classList.toggle('open', open);
+    });
+    hint(id ? 'Tap Join to save it to your phone' : 'Tap a pin to see what’s on');
+    report();
+  }
+
+  /* Join → a real QR code that opens an “add to calendar” link on the visitor's phone */
+  function to24(t) {
+    let [, h, m, ap] = t.match(/(\d+):(\d+)\s*(AM|PM)/);
+    h = +h % 12 + (ap === 'PM' ? 12 : 0);
+    return [h, +m];
+  }
+  function calendarURL(e) {
+    const [h, m] = to24(e.time), pad = n => String(n).padStart(2, '0');
+    const start = `20270222T${pad(h)}${pad(m)}00`, end = `20270222T${pad((h + 1) % 24)}${pad(m)}00`;
+    const q = new URLSearchParams({ action: 'TEMPLATE', text: e.listTitle || e.title, dates: `${start}/${end}`, location: e.place, details: `${e.desc}\n\nHosted by ${e.host.name}, ${e.host.role}` });
+    return 'https://calendar.google.com/calendar/render?' + q;
+  }
+  function qrSVG(text) {
+    const q = qrcode(0, 'L'); q.addData(text); q.make();
+    const n = q.getModuleCount(); let d = '';
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) d += `M${c} ${r}h1v1h-1z`;
+    return `<svg viewBox="0 0 ${n} ${n}" shape-rendering="crispEdges"><path d="${d}" fill="#0f172a"/></svg>`;
+  }
+  function showQR(card) {
+    const box = $('.qr', card);
+    if (!box.firstChild) box.innerHTML = qrSVG(calendarURL(EVENTS[card.dataset.card]));
+    card.classList.add('show-qr');
+    hint('Scan with your phone camera to add it to your calendar');
+    report();
+  }
+
+  /* ── Views ────────────────────────────────────────────────────────── */
+  function setFloorClasses(floor) {
+    $$('.level').forEach(l => {
+      const n = +l.dataset.level;
+      l.classList.toggle('is-selected', n === floor);
+      l.classList.toggle('is-above', n > floor);
+      l.classList.toggle('is-below', n < floor);
+    });
+    $$('.rail button').forEach(b => b.classList.toggle('on', +b.dataset.go === floor));
+    $$('.pager button[data-go]').forEach(b => b.classList.toggle('on', +b.dataset.go === floor));
+    const order = [floor, ...[3, 2, 1].filter(n => n !== floor)];
+    $$('.stack .sq').forEach(s => {
+      const d = order.indexOf(+s.dataset.n);
+      s.className = 'sq' + (d === 0 ? ' top' : ` d${d}`);
+    });
+    screen.dataset.floor = floor;
+  }
+
+  let fromTimer;
+  function report() {
+    if (window.parent === window) return;
+    const card = $('.card.open');
+    window.parent.postMessage({ seekState: {
+      view: state.view, floor: state.floor, sheet: state.sheet,
+      event: state.event, qr: !!(card && card.classList.contains('show-qr')),
+    } }, '*');
+  }
+  function go(view) {
+    screen.classList.remove('peek', 'peek-hold', 'press');
+    screen.dataset.from = state.view;
+    clearTimeout(fromTimer);
+    fromTimer = setTimeout(() => delete screen.dataset.from, 1600);
+    state.view = view;
+    screen.dataset.view = view;
+    $('.plan').setAttribute('aria-hidden', view !== 'plan');
+    if (view === 'idle') hint('Tap the building to explore');
+    if (view === 'explore') hint('Pick a floor, or tap a pin');
+    report();
+  }
+
+  function openExplore() {
+    showCard(null);
+    $$('.level').forEach(l => l.classList.remove('hot'));
+    go('explore');
+  }
+
+  function openPlan(floor, eventId) {
+    if (state.view === 'plan') return switchFloor(floor, eventId);
+    state.floor = floor;
+    $$('.level').forEach(l => l.classList.remove('hot'));
+    setFloorClasses(floor);
+    renderPlan(floor);
+    go('plan');
+    hint('Tap a pin to see what’s on');
+    if (eventId) setTimeout(() => showCard(eventId), 1250);
+  }
+
+  function switchFloor(floor, eventId) {
+    if (floor === state.floor) { if (eventId) showCard(eventId); return; }
+    const content = $('#planContent');
+    const dir = floor > state.floor ? 1 : -1;
+    content.style.setProperty('--shift', `${dir * 80}px`);
+    content.classList.add('leaving');
+    setTimeout(() => {
+      state.floor = floor;
+      screen.classList.add('instant');
+      setFloorClasses(floor);
+      void screen.offsetWidth;
+      screen.classList.remove('instant');
+      renderPlan(floor);
+      state.event = null; report();
+      content.style.setProperty('--shift', `${-dir * 80}px`);
+      void content.offsetWidth;
+      content.classList.remove('leaving');
+      if (eventId) setTimeout(() => showCard(eventId), 650);
+    }, 260);
+  }
+
+  function goHome() {
+    closeSheet();
+    showCard(null);
+    go('idle');
+  }
+
+  /* ── Sheet (tap or drag) ──────────────────────────────────────────── */
+  const sheet = $('#sheet');
+  function openSheet() { state.sheet = true; screen.classList.add('sheet-open'); hint('Tap an event to see it on the map'); report(); }
+  function closeSheet() {
+    if (!state.sheet) return;
+    state.sheet = false; screen.classList.remove('sheet-open'); report();
+    hint(state.view === 'idle' ? 'Tap the building to explore' : state.view === 'explore' ? 'Pick a floor, or tap a pin' : 'Tap a pin to see what’s on');
+  }
+  let drag = null;
+  sheet.addEventListener('pointerdown', e => {
+    if (state.sheet && e.target.closest('.ev')) return;
+    drag = { y: e.clientY, t: performance.now(), dy: 0, moved: false, id: e.pointerId };
+  });
+  window.addEventListener('pointermove', e => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const k = scale || 1;
+    drag.dy = (e.clientY - drag.y) / k;
+    if (!drag.moved && Math.abs(drag.dy) > 12) { drag.moved = true; sheet.classList.add('dragging'); }
+    if (!drag.moved) return;
+    const min = state.sheet ? 0 : -2760, max = state.sheet ? 2760 : 0;
+    let d = Math.max(min, Math.min(max, drag.dy));
+    if (drag.dy > max) d = max + (drag.dy - max) * .2;           // rubber band
+    if (drag.dy < min) d = min + (drag.dy - min) * .2;
+    sheet.style.setProperty('--drag', d + 'px');
+  });
+  window.addEventListener('pointerup', e => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const { dy, moved, t } = drag; drag = null;
+    sheet.classList.remove('dragging');
+    sheet.style.setProperty('--drag', '0px');
+    if (!moved) return;
+    sheet.dataset.justDragged = '1'; setTimeout(() => delete sheet.dataset.justDragged, 50);
+    const v = dy / Math.max(1, performance.now() - t);              // design px per ms
+    if (!state.sheet && (dy < -500 || v < -1.2)) openSheet();
+    else if (state.sheet && (dy > 500 || v > 1.2)) closeSheet();
+  });
+  $('#peek').addEventListener('click', () => { if (!sheet.dataset.justDragged) state.sheet ? closeSheet() : openSheet(); });
+  $('#sheetClose').addEventListener('click', closeSheet);
+  $('#peek').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openSheet(); } });
+  $('#scrim').addEventListener('click', closeSheet);
+
+  /* ── Wiring ───────────────────────────────────────────────────────── */
+  const hit = $('.building-hit');
+  hit.addEventListener('click', openExplore);
+  hit.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openExplore(); } });
+  hit.addEventListener('pointerenter', e => e.pointerType === 'mouse' && screen.classList.add('peek-hold'));
+  hit.addEventListener('pointerleave', () => screen.classList.remove('peek-hold', 'press'));
+  hit.addEventListener('pointerdown', () => screen.classList.add('press', 'peek-hold'));
+  window.addEventListener('pointerup', () => screen.classList.remove('press'));
+  // every few seconds on the attract screen the floors ease apart and settle back
+  setInterval(() => {
+    if (state.view !== 'idle' || state.sheet || screen.classList.contains('peek-hold')) return;
+    screen.classList.add('peek');
+    setTimeout(() => screen.classList.remove('peek'), 1100);
+  }, 4200);
+
+  $$('.level').forEach(l => {
+    const n = +l.dataset.level, slab = $('.slab-hit', l);
+    slab.addEventListener('click', () => openPlan(n));
+    const on = () => { if (state.view !== 'explore') return; l.classList.add('hot'); $$('.rail button').forEach(b => b.classList.toggle('on', +b.dataset.go === n)); };
+    const off = () => { l.classList.remove('hot'); $$('.rail button').forEach(b => b.classList.toggle('on', +b.dataset.go === state.floor)); };
+    slab.addEventListener('pointerenter', on); slab.addEventListener('pointerleave', off);
+    $$('.mini-pin', l).forEach(p => { p.addEventListener('pointerenter', on); p.addEventListener('pointerleave', off); });
+  });
+  $$('.rail button').forEach(b => {
+    const l = $(`.L${b.dataset.go}`);
+    b.addEventListener('click', () => openPlan(+b.dataset.go));
+    b.addEventListener('pointerenter', () => state.view === 'explore' && l.classList.add('hot'));
+    b.addEventListener('pointerleave', () => l.classList.remove('hot'));
+  });
+  $$('.pager button[data-go]').forEach(b => b.addEventListener('click', () => { showCard(null); switchFloor(+b.dataset.go); }));
+  $('#stack').addEventListener('click', openExplore);
+  $('#logo').addEventListener('click', goHome);
+  document.getElementById('restart').addEventListener('click', goHome);
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    if (state.sheet) closeSheet();
+    else if (state.event) showCard(null);
+    else if (state.view === 'plan') openExplore();
+    else if (state.view === 'explore') goHome();
+  });
+
+  // kiosk behaviour: warn after 50s alone, then return to the attract screen
+  const still = $('#still'), stillN = $('#stillN');
+  const mark = $('.still-mark');
+  // every shape of the mark except the red core, ordered clockwise from 12 o'clock
+  let dots = [];
+  const orderDots = () => {
+    if (dots.length) return;
+    dots = $$('path, circle', mark).filter(c => c.getAttribute('fill') !== '#ED250F').map(c => {
+      const b = c.getBBox();
+      return { c, a: (Math.atan2(b.y + b.height / 2 - 133, b.x + b.width / 2 - 133) + Math.PI * 2.5) % (Math.PI * 2) };
+    }).sort((x, y) => x.a - y.a).map(d => (d.c.classList.add('piece'), d.c));
+  };
+  $$('circle', mark).find(c => c.getAttribute('fill') === '#ED250F')?.classList.add('core');
+  const SECONDS = 10;
+  let idleTimer, countdown;
+  const poke = () => {
+    clearTimeout(idleTimer); clearInterval(countdown); still.classList.remove('show');
+    idleTimer = setTimeout(() => {
+      if (state.view === 'idle' && !state.sheet) return;
+      const t0 = performance.now();
+      orderDots();
+      dots.forEach(d => d.classList.remove('gone'));
+      stillN.textContent = SECONDS; still.classList.add('show');
+      countdown = setInterval(() => {
+        const t = (performance.now() - t0) / 1000;
+        stillN.textContent = Math.max(0, Math.ceil(SECONDS - t));
+        const gone = Math.min(dots.length, Math.floor(t / SECONDS * dots.length));
+        dots.forEach((d, i) => d.classList.toggle('gone', i < gone));
+        if (t >= SECONDS) { clearInterval(countdown); still.classList.remove('show'); goHome(); }
+      }, 100);
+    }, 50000);
+  };
+  $('#stillOver').addEventListener('click', () => { clearInterval(countdown); still.classList.remove('show'); goHome(); });
+  ['pointerdown', 'keydown'].forEach(t => window.addEventListener(t, poke, { passive: true }));
+  poke();
+  screen.addEventListener('contextmenu', e => e.preventDefault());
+  $('#back').addEventListener('click', openExplore);
+
+  /* ── Caption hint ─────────────────────────────────────────────────── */
+  const hintEl = document.getElementById('hint');
+  let hintText = hintEl.textContent;
+  function hint(t) {
+    if (t === hintText) return;
+    hintText = t;
+    hintEl.classList.add('swap');
+    setTimeout(() => { hintEl.textContent = t; hintEl.classList.remove('swap'); }, 180);
+  }
+
+  /* ── Fit the 2100 × 3536 kiosk into whatever box embeds it ────────── */
+  const fit = document.getElementById('fit'), slot = document.getElementById('slot'), device = document.getElementById('device');
+  let scale = 1;
+  function resize() {
+    const r = fit.getBoundingClientRect();
+    scale = Math.min(r.width / W, r.height / H);
+    device.style.transform = `scale(${scale})`;
+    slot.style.width = W * scale + 'px';
+    slot.style.height = H * scale + 'px';
+  }
+  new ResizeObserver(resize).observe(fit);
+  resize();
+  setFloorClasses(3);
+
+  /* host API: the 3D kiosk page drives the tour with postMessage({ seek: cmd }) */
+  window.addEventListener('message', e => {
+    if (e.source !== window.parent || !e.data || !e.data.seek) return;
+    const { cmd, floor = 3, event } = e.data.seek;
+    poke();
+    if (cmd !== 'sheet') closeSheet();
+    const wait = state.sheet ? 380 : 0;
+    setTimeout(() => {
+      if (cmd === 'home') goHome();
+      else if (cmd === 'explore') openExplore();
+      else if (cmd === 'plan') { if (state.view === 'plan' && !event) showCard(null); openPlan(floor, event); }
+      else if (cmd === 'qr') {
+        const delay = state.view === 'plan' && state.floor === floor ? 0 : 1300;
+        openPlan(floor, event);
+        setTimeout(() => { showCard(event); setTimeout(() => showQR($(`[data-card="${event}"]`)), 450); }, delay);
+      }
+      else if (cmd === 'sheet') { showCard(null); openSheet(); }
+    }, wait);
+  });
+  report();
+})();
+</script>
+</body>
+</html>
