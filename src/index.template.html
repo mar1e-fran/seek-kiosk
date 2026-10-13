@@ -8,7 +8,16 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Akatab:wght@400;600;700;900&display=swap" rel="stylesheet">
+<script>
+  /* ?embed=1 → transparent page so the host's background shows through; ?theme=dark|light → match the host */
+  (function () {
+    var q = new URLSearchParams(location.search), r = document.documentElement;
+    var t = q.get('theme'); if (t === 'dark' || t === 'light') r.setAttribute('data-theme', t);
+    if (q.get('embed') === '1') r.classList.add('embed');
+  })();
+</script>
 <style>
+html.embed, html.embed body { background: transparent; }
 /* ── Page tokens (the frame around the kiosk) ─────────────────────────── */
 :root {
   --page: #e8ecf2;
