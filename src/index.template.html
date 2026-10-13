@@ -7,6 +7,7 @@
 <meta name="description" content="Interactive prototype of SEEK, an office wayfinding kiosk: explore the building, drop into a floor, and find what's happening today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://use.typekit.net/myf3ict.css">
 <link href="https://fonts.googleapis.com/css2?family=Akatab:wght@400;600;700;900&display=swap" rel="stylesheet">
 <script>
   /* ?embed=1 → transparent page so the host's background shows through; ?theme=dark|light → match the host */
@@ -124,6 +125,14 @@ button:focus-visible, [role="button"]:focus-visible { outline: 6px solid var(--s
 }
 .caption .restart:hover { background: var(--chip); color: var(--ink); }
 .caption .restart:focus-visible { outline: 2px solid #fe8a01; outline-offset: 2px; }
+/* Embedded on mariecabibihan.com: match the portfolio's quiet, typographic captions */
+html.embed .caption { font-family: "neue-haas-grotesk-text", "Helvetica Neue", system-ui, sans-serif; font-size: 14px; letter-spacing: 0; gap: 16px; -webkit-font-smoothing: antialiased; }
+html.embed .caption .brand { display: none; }
+html.embed .caption .hint { padding: 0; background: none; color: var(--muted); border-radius: 0; }
+html.embed .caption .hint::before { display: none; }
+html.embed .caption .restart { padding: 0; border-radius: 0; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+html.embed .caption .restart:hover { background: none; text-decoration-color: transparent; }
+html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; outline-offset: 4px; }
 @keyframes ping { 0% { box-shadow: 0 0 0 0 rgba(254,138,1,.55); } 80%, 100% { box-shadow: 0 0 0 8px rgba(254,138,1,0); } }
 
 /* ── The kiosk screen: 2100 × 3536 design units ───────────────────────── */
