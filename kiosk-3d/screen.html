@@ -72,7 +72,8 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
-button:focus-visible, [role="button"]:focus-visible { outline: 6px solid var(--secondary2, #fe8a01); outline-offset: 6px; }
+/* touchscreen kiosk: no keyboard focus rings */
+button:focus-visible, [role="button"]:focus-visible { outline: none; }
 
 /* ── Embed shell ──────────────────────────────────────────────────────── */
 .shell {
@@ -223,7 +224,7 @@ html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; ou
   transform-origin: 90px 185px;
   transition: transform .55s var(--spring), opacity .3s ease;
 }
-.mini-pin img { position: absolute; left: 25.2px; top: 0; width: 130px; height: 185px; filter: drop-shadow(0 6px 10px rgba(15,23,42,.18)); }
+.mini-pin img { position: absolute; left: 25.2px; top: 0; width: 130px; height: 185px; filter: drop-shadow(0 0 1.5px rgba(15, 23, 42, .25)) drop-shadow(0 8px 12px rgba(15, 23, 42, .24)); }
 .mini-pin span { position: absolute; left: 90.2px; top: 65px; width: 1em; height: 1em; transform: translate(-50%, -50%); display: flex; align-items: center; justify-content: center; font-size: 64px; line-height: 1; }
 
 /* ── View: idle (stacked building) ── */
@@ -269,17 +270,21 @@ html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; ou
 .screen[data-view="plan"] .L1.is-selected { transform: translate(25.8px, -625.44px); }
 
 /* floor rail (exploded view labels) */
-.rail { position: absolute; left: 145px; top: 815px; width: 102px; z-index: 5; display: flex; flex-direction: column; gap: 524px; }
+.rail { position: absolute; left: 136px; top: 806px; width: 120px; z-index: 5; display: flex; flex-direction: column; gap: 506px; }
 .rail button {
-  width: 102px; height: 102px; border-radius: 10px; background: #fff;
-  font-weight: 700; font-size: 62px; letter-spacing: -1.24px; line-height: 1.32;
+  position: relative; width: 120px; height: 120px; border-radius: 10px; background: #fff;
+  font-weight: 700; font-size: 72px; letter-spacing: -1.4px; line-height: 1.32;
   display: grid; place-items: center;
-  box-shadow: 0 6px 18px rgba(15, 23, 42, .06);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, .1);
   opacity: 0; transform: translateX(-40px);
   transition: opacity .5s ease, transform .6s var(--ease-out), background .25s ease;
   pointer-events: none;
 }
 .rail button.on { background: var(--secondary2); }
+.rail button::after {
+  content: attr(data-count); position: absolute; left: 0; top: calc(100% + 14px); white-space: nowrap;
+  font-weight: 600; font-size: 36px; letter-spacing: -.4px; line-height: 1.2; color: rgba(15, 23, 42, .72);
+}
 .screen[data-view="explore"] .rail button { opacity: 1; transform: none; pointer-events: auto; transition-delay: calc(500ms + var(--i) * 70ms), calc(500ms + var(--i) * 70ms), 0ms; }
 
 /* ── Plan layer ── */
@@ -300,7 +305,7 @@ html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; ou
   transform-origin: 108px 224px;
   transition: transform .5s var(--spring), opacity .25s ease;
 }
-.pin img { position: absolute; left: 30.2px; top: 0; width: 156px; height: 224px; filter: drop-shadow(0 10px 16px rgba(15, 23, 42, .16)); }
+.pin img { position: absolute; left: 30.2px; top: 0; width: 156px; height: 224px; filter: drop-shadow(0 0 1.5px rgba(15, 23, 42, .25)) drop-shadow(0 12px 18px rgba(15, 23, 42, .26)); }
 .pin span { position: absolute; left: 108.2px; top: 78px; width: 1em; height: 1em; transform: translate(-50%, -50%); display: flex; align-items: center; justify-content: center; font-size: 84px; line-height: 1; }
 .pin:hover { transform: translateY(-12px); }
 .pin:active { transform: scale(.92); transition-duration: .12s; }
@@ -325,9 +330,10 @@ html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; ou
   position: absolute; width: 958px; transform: translate(-50%, -50%);
   display: flex; flex-direction: column; gap: 57px; align-items: flex-end;
 }
-.card.right .body { left: 587px; top: 401.5px; }
-.card.left .body { left: -402px; top: 491.5px; }
-.card .body { gap: 15px; }
+/* centred on each bubble's card area (right: y 72–747, left: y 162–837) */
+.card.right .body { left: 587px; top: 409.5px; }
+.card.left .body { left: -402px; top: 499.6px; }
+.card .body { gap: 36px; }
 .card .x {
   flex: none; width: 104px; height: 104px; border-radius: 50%; background: var(--primary4);
   display: grid; place-items: center; transition: background .2s ease, transform .2s var(--ease-out);
@@ -336,19 +342,16 @@ html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; ou
 .card .x:active { transform: scale(.9); background: var(--tile); }
 .card .faces { width: 100%; display: grid; }
 .card .faces > * { grid-area: 1 / 1; transition: opacity .3s ease, transform .45s var(--ease-out); }
-.card .info { display: flex; flex-direction: column; gap: 30px; padding-top: 8px; }
-.card .info .desc { margin-top: -8px; }
-.card .tile { height: 150px; }
-.card .join { height: 96px; }
-.host { display: flex; align-items: center; gap: 26px; }
+.card .info { display: flex; flex-direction: column; gap: 36px; }
+/* hierarchy: title → host → details → action */
+.host { display: flex; align-items: center; gap: 28px; }
 .host .av {
-  flex: none; width: 100px; height: 100px; border-radius: 50%; display: grid; place-items: center;
-  font-weight: 700; font-size: 40px; letter-spacing: -.6px; color: #fff;
+  flex: none; width: 96px; height: 96px; border-radius: 50%; display: grid; place-items: center;
+  font-weight: 700; font-size: 38px; letter-spacing: -.6px; color: #fff;
 }
-.host .who { display: flex; flex-direction: column; line-height: 1.2; }
-.host .name { font-weight: 700; font-size: 48px; letter-spacing: -.9px; color: var(--primary1); }
-.host .who { min-width: 0; }
-.host .role { font-size: 34px; letter-spacing: -.4px; color: rgba(15, 23, 42, .62); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.host .who { min-width: 0; display: flex; flex-direction: column; gap: 2px; line-height: 1.15; }
+.host .name { font-weight: 700; font-size: 54px; letter-spacing: -1px; color: var(--primary1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.host .role { font-size: 38px; letter-spacing: -.4px; color: rgba(15, 23, 42, .7); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card .qr-face { display: flex; flex-direction: column; align-items: center; opacity: 0; transform: translateY(24px); pointer-events: none; }
 .card.show-qr .info { opacity: 0; transform: translateY(-24px); pointer-events: none; }
 .card.show-qr .qr-face { opacity: 1; transform: none; pointer-events: auto; transition-delay: .12s; }
@@ -360,27 +363,23 @@ html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; ou
   display: grid; place-items: center; font-size: 35px; letter-spacing: -.7px; line-height: 1.32; color: var(--primary1);
 }
 .card .title-row { width: 100%; display: flex; gap: 30px; align-items: center; font-size: 100px; }
-.card .title-row .em { font-weight: 700; letter-spacing: -2px; line-height: 1.32; }
+.card .title-row .em { font-weight: 700; letter-spacing: -2px; line-height: 1; }
 .card .title-row h3 { margin: 0; font-weight: 900; line-height: .87; text-transform: capitalize; flex: 1; min-width: 0; font-size: 100px; white-space: nowrap; }
-.card .desc { margin: 0; font-weight: 600; font-size: 30px; letter-spacing: -.6px; line-height: 1.32; }
-.card .tiles { width: 100%; display: flex; gap: 101px; }
+.card .tiles { width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
 .tile {
-  background: var(--tile); border-radius: 14.652px; height: 177px; width: 428px;
-  padding: 11.988px 17.316px; display: flex; flex-direction: column; gap: 5px;
-  color: var(--primary1);
+  min-width: 0; height: 142px; border-radius: 14.652px; background: var(--tile); color: var(--primary1);
+  padding: 20px 30px 20px; display: flex; flex-direction: column; justify-content: space-between;
 }
-.tile + .tile { width: 427px; gap: 2px; }
-.tile .label { display: flex; align-items: center; gap: 7.992px; font-weight: 700; font-size: 33px; letter-spacing: -.66px; line-height: 1.32; }
-.tile .label img { width: 32px; height: 32px; display: block; }
-.tile .value { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 53px; letter-spacing: -1.06px; line-height: 1.32; white-space: nowrap; padding-right: 0; }
-.tile .value.lg { font-size: 65px; letter-spacing: -1.3px; }
+.tile .label { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 32px; letter-spacing: -.3px; line-height: 1.2; color: rgba(15, 23, 42, .7); }
+.tile .label img { width: 34px; height: 34px; display: block; opacity: .75; }
+.tile .value { font-weight: 700; font-size: 62px; letter-spacing: -1.3px; line-height: 1.1; white-space: nowrap; }
 .join {
-  width: 958px; height: 105px; border-radius: 14.652px; background: var(--primary3);
-  font-size: 55px; letter-spacing: -1.1px; line-height: 1.32; color: var(--primary1);
+  width: 958px; height: 100px; border-radius: 14.652px; background: var(--primary1); color: #fff;
+  font-weight: 700; font-size: 52px; letter-spacing: -.8px; line-height: 1.32;
   display: grid; place-items: center;
   transition: background .3s ease, transform .2s var(--ease-out);
 }
-.join:hover { background: #a4c6ff; }
+.join:hover { background: #1e293b; }
 .join:active { transform: scale(.985); }
 
 
@@ -390,7 +389,7 @@ html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; ou
   background: var(--primary3); border-radius: 10px; display: grid; place-items: center;
   font-weight: 700; font-size: 200px; letter-spacing: -4px; line-height: 1.32;
 }
-.stack { position: absolute; left: 107px; top: 431px; width: 264px; height: 264px; z-index: 6; isolation: isolate; }
+.stack { position: absolute; left: 698px; top: 114px; width: 264px; height: 264px; z-index: 6; isolation: isolate; }
 .stack .sq {
   position: absolute; inset: 0; border-radius: 10px; background: var(--primary3);
   display: grid; place-items: center; font-weight: 700; font-size: 200px; letter-spacing: -4px; line-height: 1.32;
@@ -463,8 +462,8 @@ html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; ou
 .still p { margin: 36px 0 0; font-size: 58px; letter-spacing: -1.1px; line-height: 1.32; color: rgba(15, 23, 42, .62); }
 .still p b { color: var(--primary1); font-weight: 700; font-variant-numeric: tabular-nums; }
 .still .stay {
-  margin-top: 90px; width: 1100px; height: 150px; border-radius: 14.652px; background: var(--primary3);
-  font-size: 64px; letter-spacing: -1.2px; line-height: 1.32; color: var(--primary1);
+  margin-top: 90px; width: 1100px; height: 150px; border-radius: 14.652px; background: var(--primary1);
+  font-weight: 700; font-size: 64px; letter-spacing: -1.2px; line-height: 1.32; color: #fff;
   display: grid; place-items: center; transition: transform .2s var(--ease-out);
 }
 .still .stay:active { transform: scale(.985); }
@@ -492,7 +491,7 @@ html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; ou
 .sheet.dragging { transition: none; }
 .screen.sheet-open .sheet { transform: translateY(calc(-2760px + var(--drag, 0px))); }
 .sheet .bg {
-  position: absolute; inset: 0; background: var(--primary3);
+  position: absolute; inset: 0; background: var(--primary1);
   border-radius: 136px 136px 0 0;
   box-shadow: 0 -20px 60px rgba(15, 23, 42, .06);
   transition: opacity .55s ease;
@@ -510,14 +509,14 @@ html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; ou
   transition: transform .8s var(--ease-sheet);
 }
 .sheet-close {
-  position: absolute; left: 1754px; top: 122px; width: 150px; height: 150px; border-radius: 15px;
-  background: var(--primary4); display: grid; place-items: center;
+  position: absolute; left: 1754px; top: 122px; width: 150px; height: 150px; border-radius: 50%;
+  background: rgba(255, 255, 255, .12); display: grid; place-items: center;
   opacity: 0; transform: translateY(30px); pointer-events: none;
   transition: opacity .3s ease, transform .5s var(--ease-out), background .2s ease;
 }
 .sheet-close svg { width: 70px; height: 70px; }
 .screen.sheet-open .sheet-close { opacity: 1; transform: none; pointer-events: auto; transition-delay: .3s; }
-.sheet-close:active { background: var(--tile); transform: scale(.94); transition-delay: 0s; }
+.sheet-close:active { background: rgba(255, 255, 255, .24); transform: scale(.94); transition-delay: 0s; }
 .grid {
   position: absolute; left: 196px; top: 433px; width: 1709px;
   display: grid; grid-template-columns: 695px 695px; justify-content: space-between; row-gap: 103px;
@@ -530,33 +529,45 @@ html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; ou
 @keyframes rise { from { transform: translateY(120px); } }
 .ev .face {
   position: absolute; left: 0; top: 0; width: 694px; height: 788px;
-  background: var(--primary4); border-radius: 15px; padding: 27px 38px;
-  display: flex; flex-direction: column; gap: 28px; align-items: flex-start; padding-bottom: 22px;
+  background: var(--primary4); border-radius: 15px; padding: 34px 38px 0;
+  display: flex; flex-direction: column; gap: 0; align-items: stretch;
   transition: box-shadow .35s ease, transform .35s var(--ease-out);
 }
 .ev:hover .face { box-shadow: 0 30px 60px -20px rgba(15, 23, 42, .25); transform: translateY(-10px); }
 .ev:active .face { transform: translateY(-4px) scale(.99); }
-.ev h4 { margin: 0; width: 505px; font-weight: 900; font-size: 80px; letter-spacing: -1.6px; line-height: 1.32; color: #000; }
-.ev .tiles { width: 100%; display: flex; flex-direction: column; gap: 16px; align-items: center; }
-.ev .org { align-self: stretch; display: flex; align-items: center; gap: 24px; padding: 0 21px; }
+/* hierarchy: when → what → where, then who, then the action */
+.ev .when {
+  align-self: flex-start; height: 72px; padding: 0 26px; border-radius: 10px; margin-bottom: 26px;
+  background: var(--primary3); color: var(--primary1); display: flex; align-items: center;
+  font-weight: 700; font-size: 44px; letter-spacing: -.8px; line-height: 1;
+}
+.ev h4 { margin: 0 0 18px; width: 505px; font-weight: 900; font-size: 80px; letter-spacing: -1.6px; line-height: 1.2; color: #000; }
+.ev .loc { display: flex; align-items: center; gap: 14px; font-weight: 600; font-size: 46px; letter-spacing: -.8px; line-height: 1.2; color: var(--primary1); }
+.ev .loc img { width: 46px; height: 46px; flex: none; opacity: .8; }
+.ev .blurb {
+  margin: 24px 0 0; font-size: 36px; letter-spacing: -.4px; line-height: 1.3; color: rgba(15, 23, 42, .74);
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+}
+.ev .org { display: flex; align-items: center; gap: 24px; margin: auto 0 30px; }
 .ev .org .av {
   flex: none; width: 88px; height: 88px; border-radius: 50%; display: grid; place-items: center;
   font-weight: 700; font-size: 34px; letter-spacing: -.5px; color: #fff;
 }
 .ev .org .who { min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
 .ev .org .name { font-weight: 700; font-size: 46px; letter-spacing: -.9px; color: var(--primary1); }
-.ev .org .role { font-size: 34px; color: rgba(15, 23, 42, .6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ev .t {
-  width: 580px; height: 136px; border-radius: 14.652px; background: var(--tile);
-  display: grid; place-items: center; color: var(--primary1); line-height: 1.32;
-}
-.ev .t.time { font-size: 70px; letter-spacing: -1.4px; }
-.ev .t.place { font-size: 65px; letter-spacing: -1.3px; }
+.ev .org .role { font-size: 34px; color: rgba(15, 23, 42, .72); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ev .where {
-  margin-top: auto; align-self: stretch; display: flex; align-items: center; justify-content: space-between;
-  font-weight: 700; font-size: 36px; letter-spacing: -.5px; line-height: 1.32; color: rgba(15, 23, 42, .62);
+  margin: 0 -38px; padding: 0 38px; height: 100px; border-top: 2px solid rgba(15, 23, 42, .07);
+  display: flex; align-items: center; justify-content: space-between;
+  font-weight: 600; font-size: 36px; letter-spacing: -.5px; line-height: 1; color: rgba(15, 23, 42, .74);
 }
-.ev .where b { color: var(--primary1); font-weight: 700; }
+.ev .where .fl { display: flex; align-items: center; gap: 16px; }
+.ev .where .fl b {
+  width: 60px; height: 60px; border-radius: 8px; background: var(--primary3); color: #000;
+  display: grid; place-items: center; font-weight: 700; font-size: 40px; letter-spacing: -.6px;
+}
+.ev .where .go { color: var(--primary1); font-weight: 700; transition: transform .3s var(--ease-out); }
+.ev:hover .where .go { transform: translateX(8px); }
 .ev .em {
   position: absolute; left: 643px; top: 40.5px; transform: translate(-50%, -50%);
   font-weight: 900; font-size: 204px; letter-spacing: -4.08px; line-height: 1.32; white-space: nowrap;
@@ -693,7 +704,7 @@ html.bare .screen { border-radius: 0; }
             <div class="bg"></div>
             <div class="peek" id="peek" role="button" tabindex="0" aria-label="Open Events of the Day"><div class="handle"></div></div>
             <h2>Events of the Day</h2>
-            <button class="sheet-close" id="sheetClose" aria-label="Close Events of the Day"><svg viewBox="0 0 24 24" fill="none" stroke="#0f172a" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+            <button class="sheet-close" id="sheetClose" aria-label="Close Events of the Day"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
             <div class="grid" id="grid"></div>
           </section>
 
@@ -750,14 +761,19 @@ html.bare .screen { border-radius: 0; }
 
   /* ── Data ─────────────────────────────────────────────────────────── */
   const EVENTS = {
-    cookies:  { emoji: '😄', listEmoji: '🍪', title: 'Cooookiesss!', listTitle: 'Homemade Coooookies!', host: { name: 'Maya Okafor', role: 'Product Designer', color: '#fe8a01' }, desc: 'Grab some homemade cookies that can elevate your pitching skills', time: '9:30 AM', place: 'Room 307', floor: 3, plan: [922, 267], mini: [414.4, 23.85] },
-    hotdogs:  { emoji: '🌭', title: 'Hot Dogs', host: { name: 'Daniel Reyes', role: 'Office Manager', color: '#01a4f8' }, desc: 'Extra New York Hot dogs here. Come grab one if you missed the breakfast.', time: '8:30 AM', place: '3rd floor cafe', placeSize: 60, floor: 3, plan: [1325, 452], mini: [853, 46] },
-    rage:     { emoji: '😡', title: 'Rage baiting', host: { name: 'Sam Whitfield', role: 'Staff Engineer', color: '#0f172a' }, desc: 'Come try me!!', time: '7:30 PM', place: 'Room 305', floor: 3, plan: [1015, 1306], mini: [1140.19, 350.34] },
-    movie:    { emoji: '🎥', title: 'Movie Night!', host: { name: 'Priya Nair', role: 'Social Committee Lead', color: '#fe8a01' }, desc: 'Star Wars The Last Jedi Tonight! Don’t forget popcorn and drinks!', time: '10:30 PM', place: 'Room 302', floor: 3, plan: [209, 1541], mini: [675.06, 660] },
-    tea:      { emoji: '☕️', title: 'Tea time', host: { name: 'Hana Kim', role: 'People & Culture Partner', color: '#01a4f8' }, desc: 'Loose leaf, warm biscuits and ten quiet minutes before stand-up.', time: '7:30 AM', place: 'Room 205', floor: 2, plan: [1015, 1306] },
-    birthday: { emoji: '🥳', title: 'Jiwan’s Birthday', host: { name: 'Leo Martins', role: 'Frontend Engineer, Jiwan’s team', color: '#fe8a01' }, desc: 'Cake in the lounge. Sign the card on your way in!', time: '7:30 PM', place: '2nd floor lounge', placeSize: 53, floor: 2, plan: [209, 1541] },
-    kittens:  { emoji: '😹', title: 'Exploding Kittens', host: { name: 'Aisha Bello', role: 'QA Analyst', color: '#0f172a' }, desc: 'Card game showdown. Bring your best poker face and a defuse.', time: '3:30 PM', place: 'Room 214', floor: 2, plan: [540, 1090] },
-    mario:    { emoji: '🎮', title: 'Mario Kart Finale!', listTitle: 'Mario Kart 8 Grand Finale!', host: { name: 'Tom Chen', role: 'Head of Platform', color: '#01a4f8' }, desc: 'Final four on the big screen. Blue shells are fair game.', time: '8:30 PM', place: 'Room 134', floor: 1, plan: [1015, 1306] },
+    cookies:  { emoji: '😄', listEmoji: '🍪', title: 'Cooookiesss!', listTitle: 'Homemade Coooookies!', host: { name: 'Maya Okafor', role: 'Product Designer', color: '#7c3aed' }, desc: 'Grab some homemade cookies that can elevate your pitching skills', time: '9:30 AM', place: 'Room 307', floor: 3, plan: [922, 267], mini: [414.4, 23.85] },
+    hotdogs:  { emoji: '🌭', title: 'Hot Dogs', host: { name: 'Daniel Reyes', role: 'Office Manager', color: '#0d9488' }, desc: 'Extra New York Hot dogs here. Come grab one if you missed the breakfast.', time: '8:30 AM', place: '3rd floor cafe', placeSize: 60, floor: 3, plan: [1325, 452], mini: [853, 46] },
+    rage:     { emoji: '😡', title: 'Rage baiting', host: { name: 'Sam Whitfield', role: 'Staff Engineer', color: '#e11d48' }, desc: 'Come try me!!', time: '7:30 PM', place: 'Room 305', floor: 3, plan: [1015, 1306], mini: [1140.19, 350.34] },
+    movie:    { emoji: '🎥', title: 'Movie Night!', host: { name: 'Priya Nair', role: 'Social Committee Lead', color: '#f59e0b' }, desc: 'Star Wars The Last Jedi Tonight! Don’t forget popcorn and drinks!', time: '10:30 PM', place: 'Room 302', floor: 3, plan: [209, 1541], mini: [675.06, 660] },
+    tea:      { emoji: '☕️', title: 'Tea time', host: { name: 'Hana Kim', role: 'People & Culture Partner', color: '#2563eb' }, desc: 'Loose leaf, warm biscuits and ten quiet minutes before stand-up.', time: '7:30 AM', place: 'Room 205', floor: 2, plan: [1015, 1306] },
+    birthday: { emoji: '🥳', title: 'Jiwan’s Birthday', host: { name: 'Leo Martins', role: 'Frontend Engineer', color: '#16a34a' }, desc: 'Cake in the lounge. Sign the card on your way in!', time: '7:30 PM', place: '2nd floor lounge', placeSize: 53, floor: 2, plan: [209, 1541] },
+    kittens:  { emoji: '😹', title: 'Exploding Kittens', host: { name: 'Aisha Bello', role: 'QA Analyst', color: '#db2777' }, desc: 'Card game showdown. Bring your best poker face and a defuse.', time: '3:30 PM', place: 'Room 214', floor: 2, plan: [540, 1090] },
+    mario:    { emoji: '🎮', title: 'Mario Kart Finale!', listTitle: 'Mario Kart 8 Grand Finale!', host: { name: 'Tom Chen', role: 'Head of Platform', color: '#475569' }, desc: 'Final four on the big screen. Blue shells are fair game.', time: '8:30 PM', place: 'Room 134', floor: 1, plan: [1015, 1306] },
+  };
+  // initials ink: navy on light fills, white on dark ones
+  const ink = hex => {
+    const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255).map(v => v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4);
+    return .2126 * r + .7152 * g + .0722 * b > .3 ? '#0f172a' : '#fff';
   };
   const TODAY = ['tea', 'hotdogs', 'cookies', 'kittens', 'birthday', 'mario'];
 
@@ -799,7 +815,7 @@ html.bare .screen { border-radius: 0; }
     const b = document.createElement('button');
     b.className = 'ev';
     b.style.setProperty('--i', i);
-    b.innerHTML = `<div class="face"><h4>${e.listTitle || e.title}</h4><div class="tiles"><div class="t time">${e.time}</div><div class="t place">${e.place}</div></div><div class="org"><span class="av" style="background:${e.host.color}">${e.host.name.split(' ').map(w => w[0]).join('')}</span><span class="who"><span class="name">${e.host.name}</span><span class="role">${e.host.role}</span></span></div><div class="where"><span>Floor <b>${e.floor}</b></span><span>Show on map →</span></div></div><div class="em" aria-hidden="true">${e.listEmoji || e.emoji}</div>`;
+    b.innerHTML = `<div class="face"><div class="when">${e.time}</div><h4>${e.listTitle || e.title}</h4><div class="loc"><img src="data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiB2aWV3Qm94PSIwIDAgMzIgMzIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGlkPSJkaXN0YW5jZSI+CjxtYXNrIGlkPSJtYXNrMF8wXzI1NyIgc3R5bGU9Im1hc2stdHlwZTphbHBoYSIgbWFza1VuaXRzPSJ1c2VyU3BhY2VPblVzZSIgeD0iMCIgeT0iMCIgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIj4KPHJlY3QgaWQ9IkJvdW5kaW5nIGJveCIgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiBmaWxsPSIjRDlEOUQ5Ii8+CjwvbWFzaz4KPGcgbWFzaz0idXJsKCNtYXNrMF8wXzI1NykiPgo8cGF0aCBpZD0iZGlzdGFuY2VfMiIgZD0iTTEwLjIzMjUgMjguMjE2M0M4Ljc0MzYxIDI3LjQ3MTkgNy45OTkxNyAyNi41MTA4IDcuOTk5MTcgMjUuMzMzQzcuOTk5MTcgMjQuNzk5NyA4LjE2MDI4IDI0LjMwNTIgOC40ODI1IDIzLjg0OTdDOC44MDQ3MiAyMy4zOTQxIDkuMjU0NzIgMjIuOTk5NyA5LjgzMjUgMjIuNjY2M0wxMS45MzI1IDI0LjYzM0MxMS43MzI1IDI0LjcyMTkgMTEuNTE1OCAyNC44MjE5IDExLjI4MjUgMjQuOTMzQzExLjA0OTIgMjUuMDQ0MSAxMC44NjU4IDI1LjE3NzQgMTAuNzMyNSAyNS4zMzNDMTEuMDIxNCAyNS42ODg2IDExLjY4ODEgMjUuOTk5NyAxMi43MzI1IDI2LjI2NjNDMTMuNzc2OSAyNi41MzMgMTQuODY1OCAyNi42NjYzIDE1Ljk5OTIgMjYuNjY2M0MxNy4xMzI1IDI2LjY2NjMgMTguMjI2OSAyNi41MzMgMTkuMjgyNSAyNi4yNjYzQzIwLjMzODEgMjUuOTk5NyAyMS4wMTAzIDI1LjY4ODYgMjEuMjk5MiAyNS4zMzNDMjEuMTQzNiAyNS4xNTUyIDIwLjk0MzYgMjUuMDEwOCAyMC42OTkyIDI0Ljg5OTdDMjAuNDU0NyAyNC43ODg2IDIwLjIyMTQgMjQuNjg4NiAxOS45OTkyIDI0LjU5OTdMMjIuMDY1OCAyMi41OTk3QzIyLjY4ODEgMjIuOTU1MiAyMy4xNjU4IDIzLjM2MDggMjMuNDk5MiAyMy44MTYzQzIzLjgzMjUgMjQuMjcxOSAyMy45OTkyIDI0Ljc3NzQgMjMuOTk5MiAyNS4zMzNDMjMuOTk5MiAyNi41MTA4IDIzLjI1NDcgMjcuNDcxOSAyMS43NjU4IDI4LjIxNjNDMjAuMjc2OSAyOC45NjA4IDE4LjM1NDcgMjkuMzMzIDE1Ljk5OTIgMjkuMzMzQzEzLjY0MzYgMjkuMzMzIDExLjcyMTQgMjguOTYwOCAxMC4yMzI1IDI4LjIxNjNaTTE2LjAzMjUgMjEuOTk5N0MxOC4yMzI1IDIwLjM3NzQgMTkuODg4MSAxOC43NDk3IDIwLjk5OTIgMTcuMTE2M0MyMi4xMTAzIDE1LjQ4MyAyMi42NjU4IDEzLjg0NDEgMjIuNjY1OCAxMi4xOTk3QzIyLjY2NTggOS45MzMgMjEuOTQzNiA4LjIyMTg5IDIwLjQ5OTIgNy4wNjYzM0MxOS4wNTQ3IDUuOTEwNzggMTcuNTU0NyA1LjMzMyAxNS45OTkyIDUuMzMzQzE0LjQ0MzYgNS4zMzMgMTIuOTQzNiA1LjkxMDc4IDExLjQ5OTIgNy4wNjYzM0MxMC4wNTQ3IDguMjIxODkgOS4zMzI1IDkuOTMzIDkuMzMyNSAxMi4xOTk3QzkuMzMyNSAxMy42ODg2IDkuODc2OTUgMTUuMjM4NiAxMC45NjU4IDE2Ljg0OTdDMTIuMDU0NyAxOC40NjA4IDEzLjc0MzYgMjAuMTc3NCAxNi4wMzI1IDIxLjk5OTdaTTE1Ljk5OTIgMjUuMzMzQzEyLjg2NTggMjMuMDIxOSAxMC41MjY5IDIwLjc3NzQgOC45ODI1IDE4LjU5OTdDNy40MzgwNiAxNi40MjE5IDYuNjY1ODMgMTQuMjg4NiA2LjY2NTgzIDEyLjE5OTdDNi42NjU4MyAxMC42MjE5IDYuOTQ5MTcgOS4yMzg1NiA3LjUxNTgzIDguMDQ5NjdDOC4wODI1IDYuODYwNzggOC44MTAyOCA1Ljg2NjMzIDkuNjk5MTcgNS4wNjYzM0MxMC41ODgxIDQuMjY2MzMgMTEuNTg4MSAzLjY2NjMzIDEyLjY5OTIgMy4yNjYzM0MxMy44MTAzIDIuODY2MzMgMTQuOTEwMyAyLjY2NjMzIDE1Ljk5OTIgMi42NjYzM0MxNy4wODgxIDIuNjY2MzMgMTguMTg4MSAyLjg2NjMzIDE5LjI5OTIgMy4yNjYzM0MyMC40MTAzIDMuNjY2MzMgMjEuNDEwMyA0LjI2NjMzIDIyLjI5OTIgNS4wNjYzM0MyMy4xODgxIDUuODY2MzMgMjMuOTE1OCA2Ljg2MDc4IDI0LjQ4MjUgOC4wNDk2N0MyNS4wNDkyIDkuMjM4NTYgMjUuMzMyNSAxMC42MjE5IDI1LjMzMjUgMTIuMTk5N0MyNS4zMzI1IDE0LjI4ODYgMjQuNTYwMyAxNi40MjE5IDIzLjAxNTggMTguNTk5N0MyMS40NzE0IDIwLjc3NzQgMTkuMTMyNSAyMy4wMjE5IDE1Ljk5OTIgMjUuMzMzWk0xNS45OTkyIDE0LjY2NjNDMTYuNzMyNSAxNC42NjYzIDE3LjM2MDMgMTQuNDA1MiAxNy44ODI1IDEzLjg4M0MxOC40MDQ3IDEzLjM2MDggMTguNjY1OCAxMi43MzMgMTguNjY1OCAxMS45OTk3QzE4LjY2NTggMTEuMjY2MyAxOC40MDQ3IDEwLjYzODYgMTcuODgyNSAxMC4xMTYzQzE3LjM2MDMgOS41OTQxMSAxNi43MzI1IDkuMzMzIDE1Ljk5OTIgOS4zMzNDMTUuMjY1OCA5LjMzMyAxNC42MzgxIDkuNTk0MTEgMTQuMTE1OCAxMC4xMTYzQzEzLjU5MzYgMTAuNjM4NiAxMy4zMzI1IDExLjI2NjMgMTMuMzMyNSAxMS45OTk3QzEzLjMzMjUgMTIuNzMzIDEzLjU5MzYgMTMuMzYwOCAxNC4xMTU4IDEzLjg4M0MxNC42MzgxIDE0LjQwNTIgMTUuMjY1OCAxNC42NjYzIDE1Ljk5OTIgMTQuNjY2M1oiIGZpbGw9IiMxQzFCMUYiLz4KPC9nPgo8L2c+Cjwvc3ZnPgo=" alt="">${e.place}</div><p class="blurb">${e.desc}</p><div class="org"><span class="av" style="background:${e.host.color};color:${ink(e.host.color)}">${e.host.name.split(' ').map(w => w[0]).join('')}</span><span class="who"><span class="name">${e.host.name}</span><span class="role">${e.host.role}</span></span></div><div class="where"><span class="fl">Floor<b>${e.floor}</b></span><span class="go">Show on map →</span></div></div><div class="em" aria-hidden="true">${e.listEmoji || e.emoji}</div>`;
     b.addEventListener('click', () => { closeSheet(); setTimeout(() => openPlan(e.floor, id), 380); });
     grid.appendChild(b);
   });
@@ -809,6 +825,8 @@ html.bare .screen { border-radius: 0; }
     for (let r = 0; r < cards.length; r += 2) {
       const pair = cards.slice(r, r + 2), h = Math.max(...pair.map(c => c.offsetHeight));
       pair.forEach(c => c.style.minHeight = h + 'px');
+      // two-line titles leave room for one line of description
+      if (h > 120) pair.forEach(c => c.closest('.face').querySelector('.blurb').style.webkitLineClamp = 1);
     }
   });
 
@@ -823,11 +841,10 @@ html.bare .screen { border-radius: 0; }
         <div class="title-row"><span class="em">${e.emoji}</span><h3>${e.title}</h3><button class="x" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="#0f172a" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
         <div class="faces">
           <div class="info">
-            <div class="host"><span class="av" style="background:${e.host.color}">${e.host.name.split(' ').map(w => w[0]).join('')}</span><div class="who"><span class="name">${e.host.name}</span><span class="role">Host · ${e.host.role}</span></div></div>
-            <p class="desc">${e.desc}</p>
+            <div class="host"><span class="av" style="background:${e.host.color};color:${ink(e.host.color)}">${e.host.name.split(' ').map(w => w[0]).join('')}</span><div class="who"><span class="name">${e.host.name}</span><span class="role">Host · ${e.host.role}</span></div></div>
             <div class="tiles">
-              <div class="tile"><div class="label"><img src="data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiB2aWV3Qm94PSIwIDAgMzIgMzIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGlkPSJjYWxlbmRhcl9tb250aCI+CjxtYXNrIGlkPSJtYXNrMF8wXzI2MCIgc3R5bGU9Im1hc2stdHlwZTphbHBoYSIgbWFza1VuaXRzPSJ1c2VyU3BhY2VPblVzZSIgeD0iMCIgeT0iMCIgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIj4KPHJlY3QgaWQ9IkJvdW5kaW5nIGJveCIgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiBmaWxsPSIjRDlEOUQ5Ii8+CjwvbWFzaz4KPGcgbWFzaz0idXJsKCNtYXNrMF8wXzI2MCkiPgo8cGF0aCBpZD0iY2FsZW5kYXJfbW9udGhfMiIgZD0iTTYuNjY2NjcgMjkuMzMzM0M1LjkzMzMzIDI5LjMzMzMgNS4zMDU1NiAyOS4wNzIyIDQuNzgzMzMgMjguNTVDNC4yNjExMSAyOC4wMjc4IDQgMjcuNCA0IDI2LjY2NjdWOEM0IDcuMjY2NjcgNC4yNjExMSA2LjYzODg5IDQuNzgzMzMgNi4xMTY2N0M1LjMwNTU2IDUuNTk0NDQgNS45MzMzMyA1LjMzMzMzIDYuNjY2NjcgNS4zMzMzM0g4VjIuNjY2NjdIMTAuNjY2N1Y1LjMzMzMzSDIxLjMzMzNWMi42NjY2N0gyNFY1LjMzMzMzSDI1LjMzMzNDMjYuMDY2NyA1LjMzMzMzIDI2LjY5NDQgNS41OTQ0NCAyNy4yMTY3IDYuMTE2NjdDMjcuNzM4OSA2LjYzODg5IDI4IDcuMjY2NjcgMjggOFYyNi42NjY3QzI4IDI3LjQgMjcuNzM4OSAyOC4wMjc4IDI3LjIxNjcgMjguNTVDMjYuNjk0NCAyOS4wNzIyIDI2LjA2NjcgMjkuMzMzMyAyNS4zMzMzIDI5LjMzMzNINi42NjY2N1pNNi42NjY2NyAyNi42NjY3SDI1LjMzMzNWMTMuMzMzM0g2LjY2NjY3VjI2LjY2NjdaTTYuNjY2NjcgMTAuNjY2N0gyNS4zMzMzVjhINi42NjY2N1YxMC42NjY3Wk0xNiAxOC42NjY3QzE1LjYyMjIgMTguNjY2NyAxNS4zMDU2IDE4LjUzODkgMTUuMDUgMTguMjgzM0MxNC43OTQ0IDE4LjAyNzggMTQuNjY2NyAxNy43MTExIDE0LjY2NjcgMTcuMzMzM0MxNC42NjY3IDE2Ljk1NTYgMTQuNzk0NCAxNi42Mzg5IDE1LjA1IDE2LjM4MzNDMTUuMzA1NiAxNi4xMjc4IDE1LjYyMjIgMTYgMTYgMTZDMTYuMzc3OCAxNiAxNi42OTQ0IDE2LjEyNzggMTYuOTUgMTYuMzgzM0MxNy4yMDU2IDE2LjYzODkgMTcuMzMzMyAxNi45NTU2IDE3LjMzMzMgMTcuMzMzM0MxNy4zMzMzIDE3LjcxMTEgMTcuMjA1NiAxOC4wMjc4IDE2Ljk1IDE4LjI4MzNDMTYuNjk0NCAxOC41Mzg5IDE2LjM3NzggMTguNjY2NyAxNiAxOC42NjY3Wk05LjcxNjY3IDE4LjI4MzNDOS40NjExMSAxOC4wMjc4IDkuMzMzMzMgMTcuNzExMSA5LjMzMzMzIDE3LjMzMzNDOS4zMzMzMyAxNi45NTU2IDkuNDYxMTEgMTYuNjM4OSA5LjcxNjY3IDE2LjM4MzNDOS45NzIyMiAxNi4xMjc4IDEwLjI4ODkgMTYgMTAuNjY2NyAxNkMxMS4wNDQ0IDE2IDExLjM2MTEgMTYuMTI3OCAxMS42MTY3IDE2LjM4MzNDMTEuODcyMiAxNi42Mzg5IDEyIDE2Ljk1NTYgMTIgMTcuMzMzM0MxMiAxNy43MTExIDExLjg3MjIgMTguMDI3OCAxMS42MTY3IDE4LjI4MzNDMTEuMzYxMSAxOC41Mzg5IDExLjA0NDQgMTguNjY2NyAxMC42NjY3IDE4LjY2NjdDMTAuMjg4OSAxOC42NjY3IDkuOTcyMjIgMTguNTM4OSA5LjcxNjY3IDE4LjI4MzNaTTIxLjMzMzMgMTguNjY2N0MyMC45NTU2IDE4LjY2NjcgMjAuNjM4OSAxOC41Mzg5IDIwLjM4MzMgMTguMjgzM0MyMC4xMjc4IDE4LjAyNzggMjAgMTcuNzExMSAyMCAxNy4zMzMzQzIwIDE2Ljk1NTYgMjAuMTI3OCAxNi42Mzg5IDIwLjM4MzMgMTYuMzgzM0MyMC42Mzg5IDE2LjEyNzggMjAuOTU1NiAxNiAyMS4zMzMzIDE2QzIxLjcxMTEgMTYgMjIuMDI3OCAxNi4xMjc4IDIyLjI4MzMgMTYuMzgzM0MyMi41Mzg5IDE2LjYzODkgMjIuNjY2NyAxNi45NTU2IDIyLjY2NjcgMTcuMzMzM0MyMi42NjY3IDE3LjcxMTEgMjIuNTM4OSAxOC4wMjc4IDIyLjI4MzMgMTguMjgzM0MyMi4wMjc4IDE4LjUzODkgMjEuNzExMSAxOC42NjY3IDIxLjMzMzMgMTguNjY2N1pNMTYgMjRDMTUuNjIyMiAyNCAxNS4zMDU2IDIzLjg3MjIgMTUuMDUgMjMuNjE2N0MxNC43OTQ0IDIzLjM2MTEgMTQuNjY2NyAyMy4wNDQ0IDE0LjY2NjcgMjIuNjY2N0MxNC42NjY3IDIyLjI4ODkgMTQuNzk0NCAyMS45NzIyIDE1LjA1IDIxLjcxNjdDMTUuMzA1NiAyMS40NjExIDE1LjYyMjIgMjEuMzMzMyAxNiAyMS4zMzMzQzE2LjM3NzggMjEuMzMzMyAxNi42OTQ0IDIxLjQ2MTEgMTYuOTUgMjEuNzE2N0MxNy4yMDU2IDIxLjk3MjIgMTcuMzMzMyAyMi4yODg5IDE3LjMzMzMgMjIuNjY2N0MxNy4zMzMzIDIzLjA0NDQgMTcuMjA1NiAyMy4zNjExIDE2Ljk1IDIzLjYxNjdDMTYuNjk0NCAyMy44NzIyIDE2LjM3NzggMjQgMTYgMjRaTTkuNzE2NjcgMjMuNjE2N0M5LjQ2MTExIDIzLjM2MTEgOS4zMzMzMyAyMy4wNDQ0IDkuMzMzMzMgMjIuNjY2N0M5LjMzMzMzIDIyLjI4ODkgOS40NjExMSAyMS45NzIyIDkuNzE2NjcgMjEuNzE2N0M5Ljk3MjIyIDIxLjQ2MTEgMTAuMjg4OSAyMS4zMzMzIDEwLjY2NjcgMjEuMzMzM0MxMS4wNDQ0IDIxLjMzMzMgMTEuMzYxMSAyMS40NjExIDExLjYxNjcgMjEuNzE2N0MxMS44NzIyIDIxLjk3MjIgMTIgMjIuMjg4OSAxMiAyMi42NjY3QzEyIDIzLjA0NDQgMTEuODcyMiAyMy4zNjExIDExLjYxNjcgMjMuNjE2N0MxMS4zNjExIDIzLjg3MjIgMTEuMDQ0NCAyNCAxMC42NjY3IDI0QzEwLjI4ODkgMjQgOS45NzIyMiAyMy44NzIyIDkuNzE2NjcgMjMuNjE2N1pNMjEuMzMzMyAyNEMyMC45NTU2IDI0IDIwLjYzODkgMjMuODcyMiAyMC4zODMzIDIzLjYxNjdDMjAuMTI3OCAyMy4zNjExIDIwIDIzLjA0NDQgMjAgMjIuNjY2N0MyMCAyMi4yODg5IDIwLjEyNzggMjEuOTcyMiAyMC4zODMzIDIxLjcxNjdDMjAuNjM4OSAyMS40NjExIDIwLjk1NTYgMjEuMzMzMyAyMS4zMzMzIDIxLjMzMzNDMjEuNzExMSAyMS4zMzMzIDIyLjAyNzggMjEuNDYxMSAyMi4yODMzIDIxLjcxNjdDMjIuNTM4OSAyMS45NzIyIDIyLjY2NjcgMjIuMjg4OSAyMi42NjY3IDIyLjY2NjdDMjIuNjY2NyAyMy4wNDQ0IDIyLjUzODkgMjMuMzYxMSAyMi4yODMzIDIzLjYxNjdDMjIuMDI3OCAyMy44NzIyIDIxLjcxMTEgMjQgMjEuMzMzMyAyNFoiIGZpbGw9IiMxQzFCMUYiLz4KPC9nPgo8L2c+Cjwvc3ZnPgo=" alt="">Time</div><div class="value">Feb 22, ${e.time}</div></div>
-              <div class="tile"><div class="label"><img src="data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiB2aWV3Qm94PSIwIDAgMzIgMzIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGlkPSJkaXN0YW5jZSI+CjxtYXNrIGlkPSJtYXNrMF8wXzI1NyIgc3R5bGU9Im1hc2stdHlwZTphbHBoYSIgbWFza1VuaXRzPSJ1c2VyU3BhY2VPblVzZSIgeD0iMCIgeT0iMCIgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIj4KPHJlY3QgaWQ9IkJvdW5kaW5nIGJveCIgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiBmaWxsPSIjRDlEOUQ5Ii8+CjwvbWFzaz4KPGcgbWFzaz0idXJsKCNtYXNrMF8wXzI1NykiPgo8cGF0aCBpZD0iZGlzdGFuY2VfMiIgZD0iTTEwLjIzMjUgMjguMjE2M0M4Ljc0MzYxIDI3LjQ3MTkgNy45OTkxNyAyNi41MTA4IDcuOTk5MTcgMjUuMzMzQzcuOTk5MTcgMjQuNzk5NyA4LjE2MDI4IDI0LjMwNTIgOC40ODI1IDIzLjg0OTdDOC44MDQ3MiAyMy4zOTQxIDkuMjU0NzIgMjIuOTk5NyA5LjgzMjUgMjIuNjY2M0wxMS45MzI1IDI0LjYzM0MxMS43MzI1IDI0LjcyMTkgMTEuNTE1OCAyNC44MjE5IDExLjI4MjUgMjQuOTMzQzExLjA0OTIgMjUuMDQ0MSAxMC44NjU4IDI1LjE3NzQgMTAuNzMyNSAyNS4zMzNDMTEuMDIxNCAyNS42ODg2IDExLjY4ODEgMjUuOTk5NyAxMi43MzI1IDI2LjI2NjNDMTMuNzc2OSAyNi41MzMgMTQuODY1OCAyNi42NjYzIDE1Ljk5OTIgMjYuNjY2M0MxNy4xMzI1IDI2LjY2NjMgMTguMjI2OSAyNi41MzMgMTkuMjgyNSAyNi4yNjYzQzIwLjMzODEgMjUuOTk5NyAyMS4wMTAzIDI1LjY4ODYgMjEuMjk5MiAyNS4zMzNDMjEuMTQzNiAyNS4xNTUyIDIwLjk0MzYgMjUuMDEwOCAyMC42OTkyIDI0Ljg5OTdDMjAuNDU0NyAyNC43ODg2IDIwLjIyMTQgMjQuNjg4NiAxOS45OTkyIDI0LjU5OTdMMjIuMDY1OCAyMi41OTk3QzIyLjY4ODEgMjIuOTU1MiAyMy4xNjU4IDIzLjM2MDggMjMuNDk5MiAyMy44MTYzQzIzLjgzMjUgMjQuMjcxOSAyMy45OTkyIDI0Ljc3NzQgMjMuOTk5MiAyNS4zMzNDMjMuOTk5MiAyNi41MTA4IDIzLjI1NDcgMjcuNDcxOSAyMS43NjU4IDI4LjIxNjNDMjAuMjc2OSAyOC45NjA4IDE4LjM1NDcgMjkuMzMzIDE1Ljk5OTIgMjkuMzMzQzEzLjY0MzYgMjkuMzMzIDExLjcyMTQgMjguOTYwOCAxMC4yMzI1IDI4LjIxNjNaTTE2LjAzMjUgMjEuOTk5N0MxOC4yMzI1IDIwLjM3NzQgMTkuODg4MSAxOC43NDk3IDIwLjk5OTIgMTcuMTE2M0MyMi4xMTAzIDE1LjQ4MyAyMi42NjU4IDEzLjg0NDEgMjIuNjY1OCAxMi4xOTk3QzIyLjY2NTggOS45MzMgMjEuOTQzNiA4LjIyMTg5IDIwLjQ5OTIgNy4wNjYzM0MxOS4wNTQ3IDUuOTEwNzggMTcuNTU0NyA1LjMzMyAxNS45OTkyIDUuMzMzQzE0LjQ0MzYgNS4zMzMgMTIuOTQzNiA1LjkxMDc4IDExLjQ5OTIgNy4wNjYzM0MxMC4wNTQ3IDguMjIxODkgOS4zMzI1IDkuOTMzIDkuMzMyNSAxMi4xOTk3QzkuMzMyNSAxMy42ODg2IDkuODc2OTUgMTUuMjM4NiAxMC45NjU4IDE2Ljg0OTdDMTIuMDU0NyAxOC40NjA4IDEzLjc0MzYgMjAuMTc3NCAxNi4wMzI1IDIxLjk5OTdaTTE1Ljk5OTIgMjUuMzMzQzEyLjg2NTggMjMuMDIxOSAxMC41MjY5IDIwLjc3NzQgOC45ODI1IDE4LjU5OTdDNy40MzgwNiAxNi40MjE5IDYuNjY1ODMgMTQuMjg4NiA2LjY2NTgzIDEyLjE5OTdDNi42NjU4MyAxMC42MjE5IDYuOTQ5MTcgOS4yMzg1NiA3LjUxNTgzIDguMDQ5NjdDOC4wODI1IDYuODYwNzggOC44MTAyOCA1Ljg2NjMzIDkuNjk5MTcgNS4wNjYzM0MxMC41ODgxIDQuMjY2MzMgMTEuNTg4MSAzLjY2NjMzIDEyLjY5OTIgMy4yNjYzM0MxMy44MTAzIDIuODY2MzMgMTQuOTEwMyAyLjY2NjMzIDE1Ljk5OTIgMi42NjYzM0MxNy4wODgxIDIuNjY2MzMgMTguMTg4MSAyLjg2NjMzIDE5LjI5OTIgMy4yNjYzM0MyMC40MTAzIDMuNjY2MzMgMjEuNDEwMyA0LjI2NjMzIDIyLjI5OTIgNS4wNjYzM0MyMy4xODgxIDUuODY2MzMgMjMuOTE1OCA2Ljg2MDc4IDI0LjQ4MjUgOC4wNDk2N0MyNS4wNDkyIDkuMjM4NTYgMjUuMzMyNSAxMC42MjE5IDI1LjMzMjUgMTIuMTk5N0MyNS4zMzI1IDE0LjI4ODYgMjQuNTYwMyAxNi40MjE5IDIzLjAxNTggMTguNTk5N0MyMS40NzE0IDIwLjc3NzQgMTkuMTMyNSAyMy4wMjE5IDE1Ljk5OTIgMjUuMzMzWk0xNS45OTkyIDE0LjY2NjNDMTYuNzMyNSAxNC42NjYzIDE3LjM2MDMgMTQuNDA1MiAxNy44ODI1IDEzLjg4M0MxOC40MDQ3IDEzLjM2MDggMTguNjY1OCAxMi43MzMgMTguNjY1OCAxMS45OTk3QzE4LjY2NTggMTEuMjY2MyAxOC40MDQ3IDEwLjYzODYgMTcuODgyNSAxMC4xMTYzQzE3LjM2MDMgOS41OTQxMSAxNi43MzI1IDkuMzMzIDE1Ljk5OTIgOS4zMzNDMTUuMjY1OCA5LjMzMyAxNC42MzgxIDkuNTk0MTEgMTQuMTE1OCAxMC4xMTYzQzEzLjU5MzYgMTAuNjM4NiAxMy4zMzI1IDExLjI2NjMgMTMuMzMyNSAxMS45OTk3QzEzLjMzMjUgMTIuNzMzIDEzLjU5MzYgMTMuMzYwOCAxNC4xMTU4IDEzLjg4M0MxNC42MzgxIDE0LjQwNTIgMTUuMjY1OCAxNC42NjYzIDE1Ljk5OTIgMTQuNjY2M1oiIGZpbGw9IiMxQzFCMUYiLz4KPC9nPgo8L2c+Cjwvc3ZnPgo=" alt="">Location</div><div class="value lg" style="${e.placeSize ? `font-size:${e.placeSize}px` : ''}">${e.place}</div></div>
+              <div class="tile"><div class="label"><img src="data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiB2aWV3Qm94PSIwIDAgMzIgMzIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGlkPSJjYWxlbmRhcl9tb250aCI+CjxtYXNrIGlkPSJtYXNrMF8wXzI2MCIgc3R5bGU9Im1hc2stdHlwZTphbHBoYSIgbWFza1VuaXRzPSJ1c2VyU3BhY2VPblVzZSIgeD0iMCIgeT0iMCIgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIj4KPHJlY3QgaWQ9IkJvdW5kaW5nIGJveCIgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiBmaWxsPSIjRDlEOUQ5Ii8+CjwvbWFzaz4KPGcgbWFzaz0idXJsKCNtYXNrMF8wXzI2MCkiPgo8cGF0aCBpZD0iY2FsZW5kYXJfbW9udGhfMiIgZD0iTTYuNjY2NjcgMjkuMzMzM0M1LjkzMzMzIDI5LjMzMzMgNS4zMDU1NiAyOS4wNzIyIDQuNzgzMzMgMjguNTVDNC4yNjExMSAyOC4wMjc4IDQgMjcuNCA0IDI2LjY2NjdWOEM0IDcuMjY2NjcgNC4yNjExMSA2LjYzODg5IDQuNzgzMzMgNi4xMTY2N0M1LjMwNTU2IDUuNTk0NDQgNS45MzMzMyA1LjMzMzMzIDYuNjY2NjcgNS4zMzMzM0g4VjIuNjY2NjdIMTAuNjY2N1Y1LjMzMzMzSDIxLjMzMzNWMi42NjY2N0gyNFY1LjMzMzMzSDI1LjMzMzNDMjYuMDY2NyA1LjMzMzMzIDI2LjY5NDQgNS41OTQ0NCAyNy4yMTY3IDYuMTE2NjdDMjcuNzM4OSA2LjYzODg5IDI4IDcuMjY2NjcgMjggOFYyNi42NjY3QzI4IDI3LjQgMjcuNzM4OSAyOC4wMjc4IDI3LjIxNjcgMjguNTVDMjYuNjk0NCAyOS4wNzIyIDI2LjA2NjcgMjkuMzMzMyAyNS4zMzMzIDI5LjMzMzNINi42NjY2N1pNNi42NjY2NyAyNi42NjY3SDI1LjMzMzNWMTMuMzMzM0g2LjY2NjY3VjI2LjY2NjdaTTYuNjY2NjcgMTAuNjY2N0gyNS4zMzMzVjhINi42NjY2N1YxMC42NjY3Wk0xNiAxOC42NjY3QzE1LjYyMjIgMTguNjY2NyAxNS4zMDU2IDE4LjUzODkgMTUuMDUgMTguMjgzM0MxNC43OTQ0IDE4LjAyNzggMTQuNjY2NyAxNy43MTExIDE0LjY2NjcgMTcuMzMzM0MxNC42NjY3IDE2Ljk1NTYgMTQuNzk0NCAxNi42Mzg5IDE1LjA1IDE2LjM4MzNDMTUuMzA1NiAxNi4xMjc4IDE1LjYyMjIgMTYgMTYgMTZDMTYuMzc3OCAxNiAxNi42OTQ0IDE2LjEyNzggMTYuOTUgMTYuMzgzM0MxNy4yMDU2IDE2LjYzODkgMTcuMzMzMyAxNi45NTU2IDE3LjMzMzMgMTcuMzMzM0MxNy4zMzMzIDE3LjcxMTEgMTcuMjA1NiAxOC4wMjc4IDE2Ljk1IDE4LjI4MzNDMTYuNjk0NCAxOC41Mzg5IDE2LjM3NzggMTguNjY2NyAxNiAxOC42NjY3Wk05LjcxNjY3IDE4LjI4MzNDOS40NjExMSAxOC4wMjc4IDkuMzMzMzMgMTcuNzExMSA5LjMzMzMzIDE3LjMzMzNDOS4zMzMzMyAxNi45NTU2IDkuNDYxMTEgMTYuNjM4OSA5LjcxNjY3IDE2LjM4MzNDOS45NzIyMiAxNi4xMjc4IDEwLjI4ODkgMTYgMTAuNjY2NyAxNkMxMS4wNDQ0IDE2IDExLjM2MTEgMTYuMTI3OCAxMS42MTY3IDE2LjM4MzNDMTEuODcyMiAxNi42Mzg5IDEyIDE2Ljk1NTYgMTIgMTcuMzMzM0MxMiAxNy43MTExIDExLjg3MjIgMTguMDI3OCAxMS42MTY3IDE4LjI4MzNDMTEuMzYxMSAxOC41Mzg5IDExLjA0NDQgMTguNjY2NyAxMC42NjY3IDE4LjY2NjdDMTAuMjg4OSAxOC42NjY3IDkuOTcyMjIgMTguNTM4OSA5LjcxNjY3IDE4LjI4MzNaTTIxLjMzMzMgMTguNjY2N0MyMC45NTU2IDE4LjY2NjcgMjAuNjM4OSAxOC41Mzg5IDIwLjM4MzMgMTguMjgzM0MyMC4xMjc4IDE4LjAyNzggMjAgMTcuNzExMSAyMCAxNy4zMzMzQzIwIDE2Ljk1NTYgMjAuMTI3OCAxNi42Mzg5IDIwLjM4MzMgMTYuMzgzM0MyMC42Mzg5IDE2LjEyNzggMjAuOTU1NiAxNiAyMS4zMzMzIDE2QzIxLjcxMTEgMTYgMjIuMDI3OCAxNi4xMjc4IDIyLjI4MzMgMTYuMzgzM0MyMi41Mzg5IDE2LjYzODkgMjIuNjY2NyAxNi45NTU2IDIyLjY2NjcgMTcuMzMzM0MyMi42NjY3IDE3LjcxMTEgMjIuNTM4OSAxOC4wMjc4IDIyLjI4MzMgMTguMjgzM0MyMi4wMjc4IDE4LjUzODkgMjEuNzExMSAxOC42NjY3IDIxLjMzMzMgMTguNjY2N1pNMTYgMjRDMTUuNjIyMiAyNCAxNS4zMDU2IDIzLjg3MjIgMTUuMDUgMjMuNjE2N0MxNC43OTQ0IDIzLjM2MTEgMTQuNjY2NyAyMy4wNDQ0IDE0LjY2NjcgMjIuNjY2N0MxNC42NjY3IDIyLjI4ODkgMTQuNzk0NCAyMS45NzIyIDE1LjA1IDIxLjcxNjdDMTUuMzA1NiAyMS40NjExIDE1LjYyMjIgMjEuMzMzMyAxNiAyMS4zMzMzQzE2LjM3NzggMjEuMzMzMyAxNi42OTQ0IDIxLjQ2MTEgMTYuOTUgMjEuNzE2N0MxNy4yMDU2IDIxLjk3MjIgMTcuMzMzMyAyMi4yODg5IDE3LjMzMzMgMjIuNjY2N0MxNy4zMzMzIDIzLjA0NDQgMTcuMjA1NiAyMy4zNjExIDE2Ljk1IDIzLjYxNjdDMTYuNjk0NCAyMy44NzIyIDE2LjM3NzggMjQgMTYgMjRaTTkuNzE2NjcgMjMuNjE2N0M5LjQ2MTExIDIzLjM2MTEgOS4zMzMzMyAyMy4wNDQ0IDkuMzMzMzMgMjIuNjY2N0M5LjMzMzMzIDIyLjI4ODkgOS40NjExMSAyMS45NzIyIDkuNzE2NjcgMjEuNzE2N0M5Ljk3MjIyIDIxLjQ2MTEgMTAuMjg4OSAyMS4zMzMzIDEwLjY2NjcgMjEuMzMzM0MxMS4wNDQ0IDIxLjMzMzMgMTEuMzYxMSAyMS40NjExIDExLjYxNjcgMjEuNzE2N0MxMS44NzIyIDIxLjk3MjIgMTIgMjIuMjg4OSAxMiAyMi42NjY3QzEyIDIzLjA0NDQgMTEuODcyMiAyMy4zNjExIDExLjYxNjcgMjMuNjE2N0MxMS4zNjExIDIzLjg3MjIgMTEuMDQ0NCAyNCAxMC42NjY3IDI0QzEwLjI4ODkgMjQgOS45NzIyMiAyMy44NzIyIDkuNzE2NjcgMjMuNjE2N1pNMjEuMzMzMyAyNEMyMC45NTU2IDI0IDIwLjYzODkgMjMuODcyMiAyMC4zODMzIDIzLjYxNjdDMjAuMTI3OCAyMy4zNjExIDIwIDIzLjA0NDQgMjAgMjIuNjY2N0MyMCAyMi4yODg5IDIwLjEyNzggMjEuOTcyMiAyMC4zODMzIDIxLjcxNjdDMjAuNjM4OSAyMS40NjExIDIwLjk1NTYgMjEuMzMzMyAyMS4zMzMzIDIxLjMzMzNDMjEuNzExMSAyMS4zMzMzIDIyLjAyNzggMjEuNDYxMSAyMi4yODMzIDIxLjcxNjdDMjIuNTM4OSAyMS45NzIyIDIyLjY2NjcgMjIuMjg4OSAyMi42NjY3IDIyLjY2NjdDMjIuNjY2NyAyMy4wNDQ0IDIyLjUzODkgMjMuMzYxMSAyMi4yODMzIDIzLjYxNjdDMjIuMDI3OCAyMy44NzIyIDIxLjcxMTEgMjQgMjEuMzMzMyAyNFoiIGZpbGw9IiMxQzFCMUYiLz4KPC9nPgo8L2c+Cjwvc3ZnPgo=" alt="">Time</div><div class="value">${e.time}</div></div>
+              <div class="tile"><div class="label"><img src="data:image/svg+xml;base64,PHN2ZyBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJub25lIiBvdmVyZmxvdz0idmlzaWJsZSIgc3R5bGU9ImRpc3BsYXk6IGJsb2NrOyIgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiB2aWV3Qm94PSIwIDAgMzIgMzIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGlkPSJkaXN0YW5jZSI+CjxtYXNrIGlkPSJtYXNrMF8wXzI1NyIgc3R5bGU9Im1hc2stdHlwZTphbHBoYSIgbWFza1VuaXRzPSJ1c2VyU3BhY2VPblVzZSIgeD0iMCIgeT0iMCIgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIj4KPHJlY3QgaWQ9IkJvdW5kaW5nIGJveCIgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiBmaWxsPSIjRDlEOUQ5Ii8+CjwvbWFzaz4KPGcgbWFzaz0idXJsKCNtYXNrMF8wXzI1NykiPgo8cGF0aCBpZD0iZGlzdGFuY2VfMiIgZD0iTTEwLjIzMjUgMjguMjE2M0M4Ljc0MzYxIDI3LjQ3MTkgNy45OTkxNyAyNi41MTA4IDcuOTk5MTcgMjUuMzMzQzcuOTk5MTcgMjQuNzk5NyA4LjE2MDI4IDI0LjMwNTIgOC40ODI1IDIzLjg0OTdDOC44MDQ3MiAyMy4zOTQxIDkuMjU0NzIgMjIuOTk5NyA5LjgzMjUgMjIuNjY2M0wxMS45MzI1IDI0LjYzM0MxMS43MzI1IDI0LjcyMTkgMTEuNTE1OCAyNC44MjE5IDExLjI4MjUgMjQuOTMzQzExLjA0OTIgMjUuMDQ0MSAxMC44NjU4IDI1LjE3NzQgMTAuNzMyNSAyNS4zMzNDMTEuMDIxNCAyNS42ODg2IDExLjY4ODEgMjUuOTk5NyAxMi43MzI1IDI2LjI2NjNDMTMuNzc2OSAyNi41MzMgMTQuODY1OCAyNi42NjYzIDE1Ljk5OTIgMjYuNjY2M0MxNy4xMzI1IDI2LjY2NjMgMTguMjI2OSAyNi41MzMgMTkuMjgyNSAyNi4yNjYzQzIwLjMzODEgMjUuOTk5NyAyMS4wMTAzIDI1LjY4ODYgMjEuMjk5MiAyNS4zMzNDMjEuMTQzNiAyNS4xNTUyIDIwLjk0MzYgMjUuMDEwOCAyMC42OTkyIDI0Ljg5OTdDMjAuNDU0NyAyNC43ODg2IDIwLjIyMTQgMjQuNjg4NiAxOS45OTkyIDI0LjU5OTdMMjIuMDY1OCAyMi41OTk3QzIyLjY4ODEgMjIuOTU1MiAyMy4xNjU4IDIzLjM2MDggMjMuNDk5MiAyMy44MTYzQzIzLjgzMjUgMjQuMjcxOSAyMy45OTkyIDI0Ljc3NzQgMjMuOTk5MiAyNS4zMzNDMjMuOTk5MiAyNi41MTA4IDIzLjI1NDcgMjcuNDcxOSAyMS43NjU4IDI4LjIxNjNDMjAuMjc2OSAyOC45NjA4IDE4LjM1NDcgMjkuMzMzIDE1Ljk5OTIgMjkuMzMzQzEzLjY0MzYgMjkuMzMzIDExLjcyMTQgMjguOTYwOCAxMC4yMzI1IDI4LjIxNjNaTTE2LjAzMjUgMjEuOTk5N0MxOC4yMzI1IDIwLjM3NzQgMTkuODg4MSAxOC43NDk3IDIwLjk5OTIgMTcuMTE2M0MyMi4xMTAzIDE1LjQ4MyAyMi42NjU4IDEzLjg0NDEgMjIuNjY1OCAxMi4xOTk3QzIyLjY2NTggOS45MzMgMjEuOTQzNiA4LjIyMTg5IDIwLjQ5OTIgNy4wNjYzM0MxOS4wNTQ3IDUuOTEwNzggMTcuNTU0NyA1LjMzMyAxNS45OTkyIDUuMzMzQzE0LjQ0MzYgNS4zMzMgMTIuOTQzNiA1LjkxMDc4IDExLjQ5OTIgNy4wNjYzM0MxMC4wNTQ3IDguMjIxODkgOS4zMzI1IDkuOTMzIDkuMzMyNSAxMi4xOTk3QzkuMzMyNSAxMy42ODg2IDkuODc2OTUgMTUuMjM4NiAxMC45NjU4IDE2Ljg0OTdDMTIuMDU0NyAxOC40NjA4IDEzLjc0MzYgMjAuMTc3NCAxNi4wMzI1IDIxLjk5OTdaTTE1Ljk5OTIgMjUuMzMzQzEyLjg2NTggMjMuMDIxOSAxMC41MjY5IDIwLjc3NzQgOC45ODI1IDE4LjU5OTdDNy40MzgwNiAxNi40MjE5IDYuNjY1ODMgMTQuMjg4NiA2LjY2NTgzIDEyLjE5OTdDNi42NjU4MyAxMC42MjE5IDYuOTQ5MTcgOS4yMzg1NiA3LjUxNTgzIDguMDQ5NjdDOC4wODI1IDYuODYwNzggOC44MTAyOCA1Ljg2NjMzIDkuNjk5MTcgNS4wNjYzM0MxMC41ODgxIDQuMjY2MzMgMTEuNTg4MSAzLjY2NjMzIDEyLjY5OTIgMy4yNjYzM0MxMy44MTAzIDIuODY2MzMgMTQuOTEwMyAyLjY2NjMzIDE1Ljk5OTIgMi42NjYzM0MxNy4wODgxIDIuNjY2MzMgMTguMTg4MSAyLjg2NjMzIDE5LjI5OTIgMy4yNjYzM0MyMC40MTAzIDMuNjY2MzMgMjEuNDEwMyA0LjI2NjMzIDIyLjI5OTIgNS4wNjYzM0MyMy4xODgxIDUuODY2MzMgMjMuOTE1OCA2Ljg2MDc4IDI0LjQ4MjUgOC4wNDk2N0MyNS4wNDkyIDkuMjM4NTYgMjUuMzMyNSAxMC42MjE5IDI1LjMzMjUgMTIuMTk5N0MyNS4zMzI1IDE0LjI4ODYgMjQuNTYwMyAxNi40MjE5IDIzLjAxNTggMTguNTk5N0MyMS40NzE0IDIwLjc3NzQgMTkuMTMyNSAyMy4wMjE5IDE1Ljk5OTIgMjUuMzMzWk0xNS45OTkyIDE0LjY2NjNDMTYuNzMyNSAxNC42NjYzIDE3LjM2MDMgMTQuNDA1MiAxNy44ODI1IDEzLjg4M0MxOC40MDQ3IDEzLjM2MDggMTguNjY1OCAxMi43MzMgMTguNjY1OCAxMS45OTk3QzE4LjY2NTggMTEuMjY2MyAxOC40MDQ3IDEwLjYzODYgMTcuODgyNSAxMC4xMTYzQzE3LjM2MDMgOS41OTQxMSAxNi43MzI1IDkuMzMzIDE1Ljk5OTIgOS4zMzNDMTUuMjY1OCA5LjMzMyAxNC42MzgxIDkuNTk0MTEgMTQuMTE1OCAxMC4xMTYzQzEzLjU5MzYgMTAuNjM4NiAxMy4zMzI1IDExLjI2NjMgMTMuMzMyNSAxMS45OTk3QzEzLjMzMjUgMTIuNzMzIDEzLjU5MzYgMTMuMzYwOCAxNC4xMTU4IDEzLjg4M0MxNC42MzgxIDE0LjQwNTIgMTUuMjY1OCAxNC42NjYzIDE1Ljk5OTIgMTQuNjY2M1oiIGZpbGw9IiMxQzFCMUYiLz4KPC9nPgo8L2c+Cjwvc3ZnPgo=" alt="">Floor ${e.floor}</div><div class="value">${e.place}</div></div>
             </div>
             <button class="join">Join</button>
           </div>
@@ -849,6 +866,10 @@ html.bare .screen { border-radius: 0; }
     $$('.card h3', pinsHost).forEach(h => {
       let size = 100;
       while (h.scrollWidth > h.clientWidth && size > 60) h.style.fontSize = (size -= 4) + 'px';
+    });
+    $$('.card .tile .value', pinsHost).forEach(v => {
+      let size = 62;
+      while (v.scrollWidth > v.clientWidth && size > 40) v.style.fontSize = (size -= 2) + 'px';
     });
   }
   pinsHost.addEventListener('click', ev => {
@@ -930,6 +951,9 @@ html.bare .screen { border-radius: 0; }
       event: state.event, qr: !!(card && card.classList.contains('show-qr')),
     } }, '*');
   }
+  const countOn = f => Object.values(EVENTS).filter(e => e.floor === f).length;
+  const plural = n => `${n} event${n === 1 ? '' : 's'}`;
+  $$('.rail button').forEach(b => b.dataset.count = plural(countOn(+b.dataset.go)));
   function go(view) {
     screen.classList.remove('peek', 'peek-hold', 'press');
     screen.dataset.from = state.view;
