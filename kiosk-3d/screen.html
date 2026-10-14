@@ -491,7 +491,7 @@ html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; ou
 .sheet.dragging { transition: none; }
 .screen.sheet-open .sheet { transform: translateY(calc(-2760px + var(--drag, 0px))); }
 .sheet .bg {
-  position: absolute; inset: 0; background: var(--primary1);
+  position: absolute; inset: 0; background: var(--primary3);
   border-radius: 136px 136px 0 0;
   box-shadow: 0 -20px 60px rgba(15, 23, 42, .06);
   transition: opacity .55s ease;
@@ -510,13 +510,13 @@ html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; ou
 }
 .sheet-close {
   position: absolute; left: 1754px; top: 122px; width: 150px; height: 150px; border-radius: 50%;
-  background: rgba(255, 255, 255, .12); display: grid; place-items: center;
+  background: rgba(255, 255, 255, .55); display: grid; place-items: center;
   opacity: 0; transform: translateY(30px); pointer-events: none;
   transition: opacity .3s ease, transform .5s var(--ease-out), background .2s ease;
 }
 .sheet-close svg { width: 70px; height: 70px; }
 .screen.sheet-open .sheet-close { opacity: 1; transform: none; pointer-events: auto; transition-delay: .3s; }
-.sheet-close:active { background: rgba(255, 255, 255, .24); transform: scale(.94); transition-delay: 0s; }
+.sheet-close:active { background: rgba(255, 255, 255, .85); transform: scale(.94); transition-delay: 0s; }
 .grid {
   position: absolute; left: 196px; top: 433px; width: 1709px;
   display: grid; grid-template-columns: 695px 695px; justify-content: space-between; row-gap: 103px;
@@ -531,6 +531,7 @@ html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; ou
   position: absolute; left: 0; top: 0; width: 694px; height: 788px;
   background: var(--primary4); border-radius: 15px; padding: 34px 38px 0;
   display: flex; flex-direction: column; gap: 0; align-items: stretch;
+  box-shadow: 0 18px 40px -22px rgba(15, 23, 42, .35);
   transition: box-shadow .35s ease, transform .35s var(--ease-out);
 }
 .ev:hover .face { box-shadow: 0 30px 60px -20px rgba(15, 23, 42, .25); transform: translateY(-10px); }
@@ -704,7 +705,7 @@ html.bare .screen { border-radius: 0; }
             <div class="bg"></div>
             <div class="peek" id="peek" role="button" tabindex="0" aria-label="Open Events of the Day"><div class="handle"></div></div>
             <h2>Events of the Day</h2>
-            <button class="sheet-close" id="sheetClose" aria-label="Close Events of the Day"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+            <button class="sheet-close" id="sheetClose" aria-label="Close Events of the Day"><svg viewBox="0 0 24 24" fill="none" stroke="#0f172a" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
             <div class="grid" id="grid"></div>
           </section>
 
