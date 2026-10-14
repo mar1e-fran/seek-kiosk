@@ -21,6 +21,6 @@ screen = re.sub(r'(assets/[\w-]+\.svg)', lambda m: uri(m[1]), screen)
 (here / 'screen.html').write_text(screen)
 
 kiosk = (here / 'src/kiosk.template.html').read_text()
-kiosk = kiosk.replace('{{SCREEN_SRC}}', 'screen.html?bare').replace('{{LOGO_SRC}}', uri('assets/logo.svg'))
+kiosk = kiosk.replace('{{SCREEN_SRC}}', 'screen.html?bare')
 (here / 'index.html').write_text(kiosk)
 print('kiosk-3d/index.html + kiosk-3d/screen.html')

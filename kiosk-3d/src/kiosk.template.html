@@ -10,28 +10,30 @@
 <link href="https://fonts.googleapis.com/css2?family=Akatab:wght@400;600;700;900&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg-1: #f6f8fb;
-  --bg-2: #dde3ec;
+  --bg-1: #f1f5f9;
+  --bg-mid: #dbe8fb;
+  --bg-2: #b3d0ff;
+  --glow: rgba(255, 255, 255, .7);
   --ink: #0f172a;
-  --muted: #5b6474;
+  --muted: #4a5b7a;
   --panel: rgba(255, 255, 255, .72);
   --panel-line: rgba(15, 23, 42, .08);
   --chip: rgba(15, 23, 42, .06);
   --active: #0f172a;
   --active-ink: #fff;
-  --accent: #fe8a01;
+  --accent: #8b95a7;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg-1: #1a212d; --bg-2: #090c12; --ink: #e8edf6; --muted: #8b95a7;
+    --bg-1: #1b2b4d; --bg-mid: #0f172a; --bg-2: #080d1a; --glow: rgba(1, 164, 248, .16); --ink: #e8edf6; --muted: #8ea3c4;
     --panel: rgba(20, 26, 36, .72); --panel-line: rgba(255, 255, 255, .08); --chip: rgba(255, 255, 255, .07);
     --active: #e8edf6; --active-ink: #0f172a;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg-1: #1a212d; --bg-2: #090c12; --ink: #e8edf6; --muted: #8b95a7;
+  --bg-1: #1b2b4d; --bg-mid: #0f172a; --bg-2: #080d1a; --glow: rgba(1, 164, 248, .16); --ink: #e8edf6; --muted: #8ea3c4;
   --panel: rgba(20, 26, 36, .72); --panel-line: rgba(255, 255, 255, .08); --chip: rgba(255, 255, 255, .07);
   --active: #e8edf6; --active-ink: #0f172a;
   color-scheme: dark;
@@ -40,7 +42,9 @@
 *, *::before, *::after { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
 body {
-  background: radial-gradient(90% 70% at 50% 38%, var(--bg-1), var(--bg-2));
+  background:
+    radial-gradient(38% 34% at 50% 42%, var(--glow), transparent 70%),
+    radial-gradient(95% 75% at 50% 38%, var(--bg-1), var(--bg-mid) 55%, var(--bg-2));
   background-color: var(--bg-2);
   color: var(--ink);
   font-family: "Akatab", system-ui, sans-serif;
@@ -84,8 +88,22 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .caption button:hover { opacity: .7; }
 .caption .z { display: none; }
 body.zoomed .caption .z { display: inline; }
+body.zoomed .caption .links.z { display: flex; }
 body.zoomed .caption .o { display: none; }
 body.loading .caption { opacity: 0; }
+
+/* at the screen: the prompt lives on the kiosk's glass, inside its edges (positioned by JS) */
+body.zoomed .caption {
+  right: auto; bottom: auto; padding: 0;
+  flex-direction: column; align-items: center; gap: 8px; text-align: center;
+  font-size: var(--cap-size, 15px);
+  opacity: 0; transition: opacity .35s ease;
+}
+body.zoomed.live .caption { opacity: 1; }
+body.zoomed .caption .msg { color: rgba(232, 237, 246, .62); }
+body.zoomed .caption .links { display: flex; gap: 22px; }
+body.zoomed .caption button { color: #e8edf6; text-underline-offset: 4px; }
+.caption .links { display: contents; }
 
 .tip {
   position: fixed; left: 0; top: 0; z-index: 6; pointer-events: none;
@@ -106,7 +124,7 @@ body.zoomed .brand { opacity: 0; }
 }
 .loader div { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 14px; }
 .loader i { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: ping 1.4s ease-out infinite; }
-@keyframes ping { 0% { box-shadow: 0 0 0 0 rgba(254, 138, 1, .55); } 80%, 100% { box-shadow: 0 0 0 9px rgba(254, 138, 1, 0); } }
+@keyframes ping { 0% { box-shadow: 0 0 0 0 rgba(139, 149, 167, .55); } 80%, 100% { box-shadow: 0 0 0 9px rgba(139, 149, 167, 0); } }
 body:not(.loading) .loader { opacity: 0; pointer-events: none; }
 
 @media (prefers-reduced-motion: reduce) {
@@ -129,8 +147,7 @@ body:not(.loading) .loader { opacity: 0; pointer-events: none; }
   <span class="msg o">Tap the kiosk to use it, or drag to look around</span>
   <button class="o" id="use">Use the kiosk</button>
   <span class="msg z" id="msg">Tap the building to explore</span>
-  <button class="z" id="restart">Restart</button>
-  <button class="z" id="back">Step back</button>
+  <span class="links z"><button id="restart">Restart</button><button id="back">Step back</button></span>
 </div>
 
 <div class="loader"><div><i></i>Powering on the kiosk</div></div>
@@ -143,7 +160,9 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
 const SCREEN_SRC = '{{SCREEN_SRC}}';
-const LOGO_SRC = '{{LOGO_SRC}}';
+
+// viewport size, never zero (the page can load inside a hidden or collapsed iframe)
+const VW = () => Math.max(320, innerWidth), VH = () => Math.max(320, innerHeight);
 
 /* ── Kiosk dimensions (metres) ─────────────────────────────────────── */
 const DESIGN_W = 2100, DESIGN_H = 3536;
@@ -194,7 +213,6 @@ scene.add(rim);
 const shell = new THREE.MeshPhysicalMaterial({ color: 0x0b0e14, metalness: 0.35, roughness: 0.48, clearcoat: 0.7, clearcoatRoughness: 0.18, envMapIntensity: 0.55 });
 const glass = new THREE.MeshPhysicalMaterial({ color: 0x020305, metalness: 0, roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.03, envMapIntensity: 0.35 });
 const alu = new THREE.MeshPhysicalMaterial({ color: 0xd3d8df, metalness: 0.95, roughness: 0.32, envMapIntensity: 1.1 });
-const accent = new THREE.MeshBasicMaterial({ color: 0xfe8a01, toneMapped: false });
 
 /* ── Kiosk ── */
 const kiosk = new THREE.Group();
@@ -211,8 +229,6 @@ add(new RoundedBoxGeometry(0.98, 0.07, 0.52, 4, 0.022), alu, 0, 0.035, 0);      
 add(new RoundedBoxGeometry(0.46, 0.06, 0.16, 3, 0.01), shell, 0, 0.095, 0);                 // neck
 add(new RoundedBoxGeometry(0.78, 1.78, 0.1, 6, 0.036), shell, 0, 1.01, 0);                  // body
 add(new RoundedBoxGeometry(0.735, 1.715, 0.008, 4, 0.004), glass, 0, 1.02, 0.051, { cast: false }); // front glass
-for (const sx of [-1, 1]) add(new THREE.BoxGeometry(0.004, 1.52, 0.03), accent, sx * 0.3905, 1.02, 0, { cast: false, receive: false }); // light strips
-add(new THREE.BoxGeometry(0.62, 0.004, 0.004), accent, 0, 0.0715, 0.24, { cast: false, receive: false }); // plinth edge light
 
 // screen: a "hole" in the WebGL layer through which the live DOM shows
 const hole = add(new THREE.PlaneGeometry(SCREEN_W, SCREEN_H),
@@ -234,26 +250,14 @@ const glare = (() => {
   return add(new THREE.PlaneGeometry(SCREEN_W, SCREEN_H), m, 0, SCREEN_Y, SCREEN_Z + 0.0004, { cast: false, receive: false });
 })();
 
-// lower panel: logo + tagline + speaker grille printed on the glass
-const panelMat = new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, toneMapped: false, opacity: 0 });
-add(new THREE.PlaneGeometry(0.56, 0.56), panelMat, 0, 0.47, SCREEN_Z, { cast: false, receive: false });
-(async () => {
-  const svg = await (await fetch(LOGO_SRC)).text();
-  const img = new Image();
-  img.src = URL.createObjectURL(new Blob([svg.replaceAll('#0F172A', '#E8EDF6')], { type: 'image/svg+xml' }));
-  await img.decode();
-  await document.fonts.load('600 40px Akatab');
-  const c = document.createElement('canvas'); c.width = c.height = 1024;
+// lower panel: an unbranded speaker grille
+(() => {
+  const c = document.createElement('canvas'); c.width = 1024; c.height = 256;
   const g = c.getContext('2d');
-  g.drawImage(img, 512 - 120, 170, 240, 240);
-  g.fillStyle = 'rgba(232,237,246,.92)'; g.textAlign = 'center';
-  g.font = '900 64px Akatab'; g.letterSpacing = '14px'; g.fillText('SEEK', 512, 510);
-  g.font = '600 34px Akatab'; g.letterSpacing = '0px'; g.fillStyle = 'rgba(232,237,246,.5)';
-  g.fillText('Find your floor. Find your people.', 512, 572);
-  g.fillStyle = 'rgba(232,237,246,.16)';
-  for (let r = 0; r < 3; r++) for (let i = 0; i < 18; i++) { g.beginPath(); g.arc(512 - 17 * 22 / 2 * 1.0 + i * 22, 820 + r * 22, 4.2, 0, Math.PI * 2); g.fill(); }
-  panelMat.map = new THREE.CanvasTexture(c); panelMat.map.colorSpace = THREE.SRGBColorSpace; panelMat.map.anisotropy = 8;
-  panelMat.opacity = 1; panelMat.needsUpdate = true;
+  g.fillStyle = 'rgba(232,237,246,.14)';
+  for (let r = 0; r < 3; r++) for (let i = 0; i < 18; i++) { g.beginPath(); g.arc(512 - 17 * 11 + i * 22, 106 + r * 22, 4.2, 0, Math.PI * 2); g.fill(); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  add(new THREE.PlaneGeometry(0.56, 0.14), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, toneMapped: false }), 0, 0.3, SCREEN_Z, { cast: false, receive: false });
 })();
 
 /* ── Floor: shadow catcher + soft contact shadow + warm glow ── */
@@ -298,7 +302,7 @@ controls.zoomSpeed = 0.6;
 const OVERVIEW_TARGET = new THREE.Vector3(0, 0.98, 0);
 const tanHalf = () => Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
 function overviewDistance() {
-  const w = innerWidth, h = innerHeight, a = w / h;
+  const w = VW(), h = VH(), a = w / h;
   return Math.max(2.25 / (2 * tanHalf() * 0.82), 1.25 / (2 * tanHalf() * a * 0.82));
 }
 function overviewPose(theta = 0.42) {
@@ -309,15 +313,15 @@ function overviewPose(theta = 0.42) {
 
 /* frame a region of the screen (in 2100×3536 design px) inside the free part of the viewport */
 function availableRect() {
-  const w = innerWidth, h = innerHeight;
-  return { x: 16, y: 20, w: w - 32, h: h - 20 - 64 };
+  const w = VW(), h = VH();
+  return { x: 16, y: 20, w: Math.max(80, w - 32), h: Math.max(80, h - 20 - 104) };
 }
 function screenPose(region = [0, 0, DESIGN_W, DESIGN_H], margin = 1.04) {
   const [rx, ry, rw, rh] = region;
   const cx = (rx + rw / 2) / DESIGN_W - 0.5, cy = (ry + rh / 2) / DESIGN_H - 0.5;
   const wx = cx * SCREEN_W, wy = SCREEN_Y - cy * SCREEN_H;
   const ww = rw / DESIGN_W * SCREEN_W * margin, wh = rh / DESIGN_H * SCREEN_H * margin;
-  const W = innerWidth, H = innerHeight, r = availableRect();
+  const W = VW(), H = VH(), r = availableRect();
   const visH = Math.max(wh * H / r.h, ww * H / r.w);          // world height of the whole viewport
   const d = visH / (2 * tanHalf());
   const ppw = H / visH;                                        // px per world unit
@@ -357,6 +361,7 @@ function zoomIn() {
   document.body.classList.add('zoomed');
   fly(screenPose(), 1600, () => {
     mode = 'zoomed';
+    document.body.classList.add('live');
     frame.classList.add('live');
     cssHost.classList.add('zoomed');
   });
@@ -366,11 +371,27 @@ function zoomOut() {
   mode = 'flying';
   frame.classList.remove('live');
   cssHost.classList.remove('zoomed');
-  document.body.classList.remove('zoomed');
+  document.body.classList.remove('zoomed', 'live');
+  caption.style.cssText = '';
   fly(returnPose || overviewPose(), 1400, () => { mode = 'overview'; controls.enabled = true; lastInput = performance.now(); });
 }
 
 /* ── Caption follows what the visitor is doing on the screen ── */
+const caption = document.querySelector('.caption');
+const cornerL = new THREE.Vector3(), cornerR = new THREE.Vector3();
+const GLASS_INSET = 0.035;                       // keep clear of the glass edge
+function placeCaption() {
+  const y = SCREEN_Y - SCREEN_H / 2 - 0.03;
+  cornerL.set(-SCREEN_W / 2 + GLASS_INSET, y, SCREEN_Z).project(camera);
+  cornerR.set(SCREEN_W / 2 - GLASS_INSET, y, SCREEN_Z).project(camera);
+  const l = (cornerL.x + 1) / 2 * VW(), r = (cornerR.x + 1) / 2 * VW();
+  const top = (1 - cornerL.y) / 2 * VH();
+  const w = r - l;
+  caption.style.left = l + 'px';
+  caption.style.width = w + 'px';
+  caption.style.top = top + 'px';
+  caption.style.setProperty('--cap-size', Math.max(12, Math.min(16, w / 26)) + 'px');
+}
 const msg = document.getElementById('msg');
 const HINTS = {
   attract: 'Tap the building to explore',
@@ -396,7 +417,7 @@ document.getElementById('restart').addEventListener('click', () => iframe.conten
 const tip = document.getElementById('tip');
 const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
 const hitKiosk = (x, y) => {
-  ndc.set(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1);
+  ndc.set(x / VW() * 2 - 1, -(y / VH()) * 2 + 1);
   ray.setFromCamera(ndc, camera);
   return ray.intersectObject(kiosk, true)[0];
 };
@@ -429,11 +450,15 @@ addEventListener('keydown', e => {
 
 /* ── Resize ── */
 function resize() {
-  const w = innerWidth, h = innerHeight;
+  const w = VW(), h = VH();
   camera.aspect = w / h; camera.updateProjectionMatrix();
   gl.setSize(w, h, false); css.setSize(w, h);
   canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
   if (mode === 'zoomed') { const p = screenPose(); camera.position.copy(p.pos); controls.target.copy(p.target); camera.lookAt(p.target); }
+  // recover if the camera was ever posed against a degenerate viewport
+  if (![camera.position.x, camera.position.y, camera.position.z].every(Number.isFinite) && mode !== 'zoomed') {
+    const p = overviewPose(); camera.position.copy(p.pos); controls.target.copy(p.target); camera.lookAt(p.target);
+  }
   controls.minDistance = overviewDistance() * 0.7;
   controls.maxDistance = overviewDistance() * 1.35;
 }
@@ -460,6 +485,7 @@ function loop(now) {
   // glare fades as you get close to the glass
   const dist = camera.position.distanceTo(hole.position);
   glare.material.opacity = THREE.MathUtils.clamp((dist - 1.6) / 2, 0, 1);
+  if (mode === 'zoomed') placeCaption();
   gl.render(scene, camera);
   css.render(cssScene, camera);
   requestAnimationFrame(loop);
