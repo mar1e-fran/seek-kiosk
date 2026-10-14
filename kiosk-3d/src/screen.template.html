@@ -530,15 +530,23 @@ html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; ou
 .ev .face {
   position: absolute; left: 0; top: 0; width: 694px; height: 788px;
   background: var(--primary4); border-radius: 15px; padding: 27px 38px;
-  display: flex; flex-direction: column; gap: 42px; align-items: flex-start; padding-bottom: 22px;
+  display: flex; flex-direction: column; gap: 28px; align-items: flex-start; padding-bottom: 22px;
   transition: box-shadow .35s ease, transform .35s var(--ease-out);
 }
 .ev:hover .face { box-shadow: 0 30px 60px -20px rgba(15, 23, 42, .25); transform: translateY(-10px); }
 .ev:active .face { transform: translateY(-4px) scale(.99); }
 .ev h4 { margin: 0; width: 505px; font-weight: 900; font-size: 80px; letter-spacing: -1.6px; line-height: 1.32; color: #000; }
-.ev .tiles { width: 100%; height: 392px; display: flex; flex-direction: column; gap: 38px; align-items: center; justify-content: center; }
+.ev .tiles { width: 100%; display: flex; flex-direction: column; gap: 20px; align-items: center; }
+.ev .org { align-self: stretch; display: flex; align-items: center; gap: 20px; padding: 0 21px; }
+.ev .org .av {
+  flex: none; width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center;
+  font-weight: 700; font-size: 26px; letter-spacing: -.4px; color: #fff;
+}
+.ev .org .who { min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
+.ev .org .name { font-weight: 700; font-size: 34px; letter-spacing: -.6px; color: var(--primary1); }
+.ev .org .role { font-size: 28px; color: rgba(15, 23, 42, .6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ev .t {
-  width: 580px; height: 177px; border-radius: 14.652px; background: var(--tile);
+  width: 580px; height: 150px; border-radius: 14.652px; background: var(--tile);
   display: grid; place-items: center; color: var(--primary1); line-height: 1.32;
 }
 .ev .t.time { font-size: 70px; letter-spacing: -1.4px; }
@@ -769,7 +777,7 @@ html.bare .screen { border-radius: 0; }
     const b = document.createElement('button');
     b.className = 'ev';
     b.style.setProperty('--i', i);
-    b.innerHTML = `<div class="face"><h4>${e.listTitle || e.title}</h4><div class="tiles"><div class="t time">${e.time}</div><div class="t place">${e.place}</div></div><div class="where"><span>Floor <b>${e.floor}</b></span><span>Show on map →</span></div></div><div class="em" aria-hidden="true">${e.listEmoji || e.emoji}</div>`;
+    b.innerHTML = `<div class="face"><h4>${e.listTitle || e.title}</h4><div class="tiles"><div class="t time">${e.time}</div><div class="t place">${e.place}</div></div><div class="org"><span class="av" style="background:${e.host.color}">${e.host.name.split(' ').map(w => w[0]).join('')}</span><span class="who"><span class="name">${e.host.name}</span><span class="role">${e.host.role}</span></span></div><div class="where"><span>Floor <b>${e.floor}</b></span><span>Show on map →</span></div></div><div class="em" aria-hidden="true">${e.listEmoji || e.emoji}</div>`;
     b.addEventListener('click', () => { closeSheet(); setTimeout(() => openPlan(e.floor, id), 380); });
     grid.appendChild(b);
   });
