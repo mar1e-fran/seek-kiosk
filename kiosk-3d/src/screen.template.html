@@ -336,18 +336,19 @@ html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; ou
 .card .x:active { transform: scale(.9); background: var(--tile); }
 .card .faces { width: 100%; display: grid; }
 .card .faces > * { grid-area: 1 / 1; transition: opacity .3s ease, transform .45s var(--ease-out); }
-.card .info { display: flex; flex-direction: column; gap: 36px; padding-top: 8px; }
-.card .info .desc { margin-top: -14px; }
-.card .tile { height: 160px; }
-.host { display: flex; align-items: center; gap: 22px; }
+.card .info { display: flex; flex-direction: column; gap: 30px; padding-top: 8px; }
+.card .info .desc { margin-top: -8px; }
+.card .tile { height: 150px; }
+.card .join { height: 96px; }
+.host { display: flex; align-items: center; gap: 26px; }
 .host .av {
-  flex: none; width: 80px; height: 80px; border-radius: 50%; display: grid; place-items: center;
-  font-weight: 700; font-size: 32px; letter-spacing: -.5px; color: #fff;
+  flex: none; width: 100px; height: 100px; border-radius: 50%; display: grid; place-items: center;
+  font-weight: 700; font-size: 40px; letter-spacing: -.6px; color: #fff;
 }
 .host .who { display: flex; flex-direction: column; line-height: 1.2; }
-.host .by { font-weight: 600; font-size: 26px; color: rgba(15, 23, 42, .55); }
-.host .name { font-weight: 700; font-size: 36px; letter-spacing: -.6px; color: var(--primary1); }
-.host .name span { font-weight: 400; color: rgba(15, 23, 42, .62); }
+.host .name { font-weight: 700; font-size: 48px; letter-spacing: -.9px; color: var(--primary1); }
+.host .who { min-width: 0; }
+.host .role { font-size: 34px; letter-spacing: -.4px; color: rgba(15, 23, 42, .62); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card .qr-face { display: flex; flex-direction: column; align-items: center; opacity: 0; transform: translateY(24px); pointer-events: none; }
 .card.show-qr .info { opacity: 0; transform: translateY(-24px); pointer-events: none; }
 .card.show-qr .qr-face { opacity: 1; transform: none; pointer-events: auto; transition-delay: .12s; }
@@ -536,17 +537,17 @@ html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; ou
 .ev:hover .face { box-shadow: 0 30px 60px -20px rgba(15, 23, 42, .25); transform: translateY(-10px); }
 .ev:active .face { transform: translateY(-4px) scale(.99); }
 .ev h4 { margin: 0; width: 505px; font-weight: 900; font-size: 80px; letter-spacing: -1.6px; line-height: 1.32; color: #000; }
-.ev .tiles { width: 100%; display: flex; flex-direction: column; gap: 20px; align-items: center; }
-.ev .org { align-self: stretch; display: flex; align-items: center; gap: 20px; padding: 0 21px; }
+.ev .tiles { width: 100%; display: flex; flex-direction: column; gap: 16px; align-items: center; }
+.ev .org { align-self: stretch; display: flex; align-items: center; gap: 24px; padding: 0 21px; }
 .ev .org .av {
-  flex: none; width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center;
-  font-weight: 700; font-size: 26px; letter-spacing: -.4px; color: #fff;
+  flex: none; width: 88px; height: 88px; border-radius: 50%; display: grid; place-items: center;
+  font-weight: 700; font-size: 34px; letter-spacing: -.5px; color: #fff;
 }
 .ev .org .who { min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
-.ev .org .name { font-weight: 700; font-size: 34px; letter-spacing: -.6px; color: var(--primary1); }
-.ev .org .role { font-size: 28px; color: rgba(15, 23, 42, .6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev .org .name { font-weight: 700; font-size: 46px; letter-spacing: -.9px; color: var(--primary1); }
+.ev .org .role { font-size: 34px; color: rgba(15, 23, 42, .6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ev .t {
-  width: 580px; height: 150px; border-radius: 14.652px; background: var(--tile);
+  width: 580px; height: 136px; border-radius: 14.652px; background: var(--tile);
   display: grid; place-items: center; color: var(--primary1); line-height: 1.32;
 }
 .ev .t.time { font-size: 70px; letter-spacing: -1.4px; }
@@ -801,7 +802,7 @@ html.bare .screen { border-radius: 0; }
         <div class="title-row"><span class="em">${e.emoji}</span><h3>${e.title}</h3><button class="x" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="#0f172a" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
         <div class="faces">
           <div class="info">
-            <div class="host"><span class="av" style="background:${e.host.color}">${e.host.name.split(' ').map(w => w[0]).join('')}</span><div class="who"><span class="by">Hosted by</span><span class="name">${e.host.name} <span>· ${e.host.role}</span></span></div></div>
+            <div class="host"><span class="av" style="background:${e.host.color}">${e.host.name.split(' ').map(w => w[0]).join('')}</span><div class="who"><span class="name">${e.host.name}</span><span class="role">Host · ${e.host.role}</span></div></div>
             <p class="desc">${e.desc}</p>
             <div class="tiles">
               <div class="tile"><div class="label"><img src="assets/icon-calendar.svg" alt="">Time</div><div class="value">Feb 22, ${e.time}</div></div>
