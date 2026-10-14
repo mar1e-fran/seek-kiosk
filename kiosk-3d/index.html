@@ -182,6 +182,8 @@ gl.toneMapping = THREE.ACESFilmicToneMapping;
 gl.toneMappingExposure = 1.05;
 gl.shadowMap.enabled = true;
 gl.shadowMap.type = THREE.VSMShadowMap;
+gl.shadowMap.autoUpdate = false;           // the scene never moves: bake shadows once
+gl.shadowMap.needsUpdate = true;
 
 const css = new CSS3DRenderer();
 cssHost.appendChild(css.domElement);
@@ -360,6 +362,7 @@ function zoomIn() {
   document.body.classList.add('zoomed');
   fly(screenPose(), 1600, () => {
     mode = 'zoomed';
+    enterFlat();
     document.body.classList.add('live');
     frame.classList.add('live');
     cssHost.classList.add('zoomed');
@@ -368,11 +371,51 @@ function zoomIn() {
 function zoomOut() {
   if (mode !== 'zoomed') return;
   mode = 'flying';
+  exitFlat();
   frame.classList.remove('live');
   cssHost.classList.remove('zoomed');
   document.body.classList.remove('zoomed', 'live');
   caption.style.cssText = '';
   fly(returnPose || overviewPose(), 1400, () => { mode = 'overview'; controls.enabled = true; lastInput = performance.now(); });
+}
+
+/* ── Flat mode: once you're square-on to the screen there's no visible 3D, so the live
+   screen leaves the CSS 3D context and becomes a plain 2D layer placed over the glass.
+   Inside a 3D transform the browser re-rasterises the whole screen whenever a large
+   layer starts moving (the Events sheet cost ~1s per open); flat, it composites freely. ── */
+let flat = null, dirty = true;
+// CSS3DRenderer DOM: domElement > viewElement > cameraElement > objects
+const viewEl = () => css.domElement.firstElementChild;
+const camEl = () => viewEl().firstElementChild;
+function screenRect() {
+  const a = new THREE.Vector3(-SCREEN_W / 2, SCREEN_Y + SCREEN_H / 2, SCREEN_Z).project(camera);
+  const b = new THREE.Vector3(SCREEN_W / 2, SCREEN_Y - SCREEN_H / 2, SCREEN_Z).project(camera);
+  const l = (a.x + 1) / 2 * VW(), r = (b.x + 1) / 2 * VW(), t = (1 - a.y) / 2 * VH(), bt = (1 - b.y) / 2 * VH();
+  return { l, r, t, b: bt };
+}
+function placeFlat() {
+  const { l, r, t, b } = screenRect();
+  frame.style.transform = `translate(${l}px, ${t}px) scale(${(r - l) / FRAME_W}, ${(b - t) / FRAME_H})`;
+}
+function enterFlat() {
+  if (flat) return;
+  const view = viewEl(), cam = camEl();
+  flat = { viewT: view.style.transform, viewTS: view.style.transformStyle, camT: cam.style.transform, camTS: cam.style.transformStyle, objT: frame.style.transform, objO: frame.style.transformOrigin };
+  for (const el of [view, cam]) { el.style.transform = 'none'; el.style.transformStyle = 'flat'; }
+  frame.style.transformOrigin = '0 0';
+  placeFlat();
+}
+function exitFlat() {
+  if (!flat) return;
+  const view = viewEl(), cam = camEl();
+  // restore exactly what CSS3DRenderer last wrote, so its style cache stays truthful
+  view.style.transform = flat.viewT;
+  view.style.transformStyle = flat.viewTS;
+  cam.style.transform = flat.camT;
+  cam.style.transformStyle = flat.camTS;
+  frame.style.transform = flat.objT;
+  frame.style.transformOrigin = flat.objO;
+  flat = null;
 }
 
 /* ── Caption follows what the visitor is doing on the screen ── */
@@ -453,7 +496,8 @@ function resize() {
   camera.aspect = w / h; camera.updateProjectionMatrix();
   gl.setSize(w, h, false); css.setSize(w, h);
   canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
-  if (mode === 'zoomed') { const p = screenPose(); camera.position.copy(p.pos); controls.target.copy(p.target); camera.lookAt(p.target); }
+  if (mode === 'zoomed') { const p = screenPose(); camera.position.copy(p.pos); controls.target.copy(p.target); camera.lookAt(p.target); camera.updateMatrixWorld(); if (flat) placeFlat(); }
+  dirty = true;
   // recover if the camera was ever posed against a degenerate viewport
   if (![camera.position.x, camera.position.y, camera.position.z].every(Number.isFinite) && mode !== 'zoomed') {
     const p = overviewPose(); camera.position.copy(p.pos); controls.target.copy(p.target); camera.lookAt(p.target);
@@ -485,8 +529,10 @@ function loop(now) {
   const dist = camera.position.distanceTo(hole.position);
   glare.material.opacity = THREE.MathUtils.clamp((dist - 1.6) / 2, 0, 1);
   if (mode === 'zoomed') placeCaption();
-  gl.render(scene, camera);
-  css.render(cssScene, camera);
+  // at the screen nothing in 3D moves: skip the WebGL pass so the live screen gets the frame budget
+  if (!(mode === 'zoomed' && !flight && !dirty)) gl.render(scene, camera);
+  dirty = false;
+  if (!flat) css.render(cssScene, camera);
   requestAnimationFrame(loop);
 }
 

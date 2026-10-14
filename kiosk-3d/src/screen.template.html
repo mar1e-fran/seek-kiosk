@@ -55,8 +55,10 @@ html.embed, html.embed body { background: transparent; }
   --ease-out: cubic-bezier(.22, 1, .36, 1);
   --ease-inout: cubic-bezier(.65, 0, .35, 1);
   --ease-sheet: cubic-bezier(.32, .72, 0, 1);
+  --ease-explode: cubic-bezier(.16, 1, .3, 1);   /* fast start, long soft landing */
+  --build-ease: var(--ease-inout);
   --spring: cubic-bezier(.34, 1.56, .64, 1);
-  --t-build: 1100ms;
+  --t-build: 1200ms;
   --t-morph: 950ms;
 }
 
@@ -162,8 +164,6 @@ html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; ou
 .logo img { width: 264px; height: 264px; display: block; transition: transform .6s var(--spring); }
 .logo:active img { transform: scale(.92) rotate(-12deg); }
 .screen[data-view="plan"] .logo { transform: translateY(20px); }
-.screen[data-view="idle"] .logo img { animation: logo-spin 14s linear infinite; }
-@keyframes logo-spin { to { transform: rotate(360deg); } }
 
 /* ── Building stage (Figma "Frame 37": 1682 × 2373 at 209, 496) ───────── */
 .stage {
@@ -174,23 +174,26 @@ html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; ou
   z-index: 2;
 }
 .float { position: absolute; inset: 0; }
-.screen[data-view="idle"] .float { animation: float 7s ease-in-out infinite; }
-@keyframes float { 50% { transform: translateY(-18px); } }
 
 .layer { position: absolute; inset: 0; pointer-events: none; }
 .level, .roof, .glass, .furn, .mini-pins {
   transition:
-    transform var(--t-build) var(--ease-inout),
-    opacity calc(var(--t-build) * .6) ease,
-    translate .9s cubic-bezier(.34, 1.45, .64, 1);
+    transform var(--t-build) var(--build-ease),
+    opacity calc(var(--t-build) * .5) ease,
+    translate .6s var(--ease-out);              /* peek settles back without overshoot */
+  will-change: transform;
 }
+/* opening: fast out of the gate, soft landing; closing keeps the symmetric ease */
+.screen[data-view="explore"], .screen[data-view="plan"] { --build-ease: var(--ease-explode); }
+/* the peek itself may spring, it's a gesture preview */
+.screen[data-view="idle"]:is(.peek, .peek-hold) :is(.level, .roof, .glass) { transition-property: transform, opacity, translate; transition-duration: var(--t-build), calc(var(--t-build) * .5), .9s; transition-timing-function: var(--build-ease), ease, cubic-bezier(.34, 1.45, .64, 1); }
 /* affordance: in idle the floors periodically ease apart (a preview of the
    explode), and do so on hover/press, so the building itself reads as touchable */
 .screen[data-view="idle"]:is(.peek, .peek-hold) .L3 { translate: 0 -54px; }
 .screen[data-view="idle"]:is(.peek, .peek-hold) .L1 { translate: 0 54px; }
 .screen[data-view="idle"]:is(.peek, .peek-hold) .roof { translate: 0 -120px; }
 .screen[data-view="idle"]:is(.peek, .peek-hold) .glass { translate: calc(var(--dx) * .07) calc(var(--dy) * .07); opacity: .55; }
-.float { scale: 1; transition: scale .25s var(--ease-out); }
+.float { scale: 1; transition: scale .35s var(--ease-out); will-change: transform; }
 .screen[data-view="idle"].press .float { scale: .975; }
 
 /* iso slab: wrapper box from Figma, inner element carries the isometric transform */
@@ -238,8 +241,10 @@ html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; ou
 .screen[data-view="idle"] .mini-pin { opacity: 0; transform: scale(.4); transition-delay: 0s !important; }
 
 /* choreography: walls leave before the floors split; floors close before walls return */
-.screen[data-from="idle"][data-view="explore"] .level { transition-delay: 140ms; }
-.screen[data-from="idle"][data-view="explore"] .roof { transition-delay: 60ms; }
+.screen[data-from="idle"][data-view="explore"] .roof { transition-delay: 0ms; }
+.screen[data-from="idle"][data-view="explore"] .L3 { transition-delay: 70ms; }
+.screen[data-from="idle"][data-view="explore"] .L2 { transition-delay: 100ms; }
+.screen[data-from="idle"][data-view="explore"] .L1 { transition-delay: 130ms; }
 .screen[data-view="idle"] .glass { transition-delay: 380ms; }
 .screen[data-view="idle"] .roof { transition-delay: 200ms; }
 
