@@ -130,6 +130,14 @@ body:not(.loading) .loader { opacity: 0; pointer-events: none; }
   *, *::before, *::after { animation: none !important; transition-duration: .01ms !important; transition-delay: 0s !important; }
 }
 </style>
+<script>
+  // Phones get the flat, fully interactive kiosk: WebGL plus a live page inside a CSS 3D
+  // transform can exceed mobile memory limits and crash the tab. Add ?3d to force 3D.
+  if (!/[?&]3d\b/.test(location.search) && matchMedia('(pointer: coarse) and (max-width: 820px)').matches) {
+    const q = new URLSearchParams(location.search); q.set('embed', '1');   // portfolio caption, host background
+    location.replace('screen.html?' + q + location.hash);
+  }
+</script>
 <script type="importmap">
 { "imports": {
   "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
@@ -174,14 +182,15 @@ const stage = document.getElementById('stage');
 const cssHost = document.getElementById('css');
 const canvas = document.getElementById('gl');
 
-const gl = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-gl.setPixelRatio(Math.min(devicePixelRatio, 2));
+const LITE = matchMedia('(pointer: coarse)').matches;   // tablets: cheaper GPU settings
+const gl = new THREE.WebGLRenderer({ canvas, antialias: !LITE, alpha: true, powerPreference: LITE ? 'low-power' : 'high-performance' });
+gl.setPixelRatio(Math.min(devicePixelRatio, LITE ? 1.5 : 2));
 gl.setClearColor(0x000000, 0);
 gl.outputColorSpace = THREE.SRGBColorSpace;
 gl.toneMapping = THREE.ACESFilmicToneMapping;
 gl.toneMappingExposure = 1.05;
 gl.shadowMap.enabled = true;
-gl.shadowMap.type = THREE.VSMShadowMap;
+gl.shadowMap.type = LITE ? THREE.PCFSoftShadowMap : THREE.VSMShadowMap;
 gl.shadowMap.autoUpdate = false;           // the scene never moves: bake shadows once
 gl.shadowMap.needsUpdate = true;
 
@@ -200,7 +209,7 @@ scene.add(new THREE.HemisphereLight(0xf2f6ff, 0x8a94a6, 0.55));
 const key = new THREE.DirectionalLight(0xffffff, 2.4);
 key.position.set(2.2, 4.6, 3.2);
 key.castShadow = true;
-key.shadow.mapSize.set(2048, 2048);
+key.shadow.mapSize.set(LITE ? 1024 : 2048, LITE ? 1024 : 2048);
 key.shadow.radius = 10;
 key.shadow.blurSamples = 20;
 key.shadow.bias = -0.0004;

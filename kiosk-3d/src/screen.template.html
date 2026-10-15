@@ -181,7 +181,6 @@ html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; ou
     transform var(--t-build) var(--build-ease),
     opacity calc(var(--t-build) * .5) ease,
     translate .6s var(--ease-out);              /* peek settles back without overshoot */
-  will-change: transform;
 }
 /* opening: fast out of the gate, soft landing; closing keeps the symmetric ease */
 .screen[data-view="explore"], .screen[data-view="plan"] { --build-ease: var(--ease-explode); }
