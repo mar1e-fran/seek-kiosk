@@ -121,6 +121,10 @@ body.zoomed .brand { opacity: 0; }
   position: fixed; inset: 0; z-index: 10; display: grid; place-items: center;
   background: var(--bg-2); transition: opacity .7s ease .1s;
 }
+/* embedded (in an iframe, or ?embed=1): let the host page's background show through, like the phone version */
+html.embed, html.embed body, html.embed .loader { background: transparent; }
+/* a colour-scheme that differs from the host makes browsers paint an opaque iframe backdrop */
+:root.embed { color-scheme: normal !important; }
 .loader div { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 14px; }
 .loader i { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: ping 1.4s ease-out infinite; }
 @keyframes ping { 0% { box-shadow: 0 0 0 0 rgba(139, 149, 167, .55); } 80%, 100% { box-shadow: 0 0 0 9px rgba(139, 149, 167, 0); } }
@@ -134,8 +138,11 @@ body:not(.loading) .loader { opacity: 0; pointer-events: none; }
   // Phones get the flat, fully interactive kiosk: WebGL plus a live page inside a CSS 3D
   // transform can exceed mobile memory limits and crash the tab. Add ?3d to force 3D.
   if (!/[?&]3d\b/.test(location.search) && matchMedia('(pointer: coarse) and (max-width: 820px)').matches) {
-    const q = new URLSearchParams(location.search); q.set('embed', '1');   // portfolio caption, host background
-    location.replace('screen.html?' + q + location.hash);
+    // phones get the standalone SEEK interface (repo root) in its portfolio embed mode;
+    // nothing 3D ever starts here
+    window.__lite = true;
+    const q = new URLSearchParams(location.search); q.set('embed', '1');
+    location.replace('../?' + q + location.hash);
   }
 </script>
 <script type="importmap">
@@ -146,6 +153,7 @@ body:not(.loading) .loader { opacity: 0; pointer-events: none; }
 </script>
 </head>
 <body class="loading">
+<script>if (window.self !== window.top || /[?&]embed=1\b/.test(location.search)) document.documentElement.classList.add('embed');</script>
 <div id="stage"><div id="css"></div><canvas id="gl"></canvas></div>
 
 <div class="brand"><b>SEEK</b><span>Office wayfinding kiosk · interactive prototype</span></div>
@@ -160,6 +168,7 @@ body:not(.loading) .loader { opacity: 0; pointer-events: none; }
 <div class="loader"><div><i></i>Powering on the kiosk</div></div>
 
 <script type="module">
+if (window.__lite) await new Promise(() => {});   // phones are being sent to the 2D interface
 import * as THREE from 'three';
 import { CSS3DRenderer, CSS3DObject } from 'three/addons/renderers/CSS3DRenderer.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';

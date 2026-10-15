@@ -192,7 +192,7 @@ html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; ou
 .screen[data-view="idle"]:is(.peek, .peek-hold) .L1 { translate: 0 54px; }
 .screen[data-view="idle"]:is(.peek, .peek-hold) .roof { translate: 0 -120px; }
 .screen[data-view="idle"]:is(.peek, .peek-hold) .glass { translate: calc(var(--dx) * .07) calc(var(--dy) * .07); opacity: .55; }
-.float { scale: 1; transition: scale .35s var(--ease-out); will-change: transform; }
+.float { scale: 1; transition: scale .35s var(--ease-out); }
 .screen[data-view="idle"].press .float { scale: .975; }
 
 /* iso slab: wrapper box from Figma, inner element carries the isometric transform */
@@ -587,6 +587,11 @@ html.bare .caption { display: none; }
 html.bare .device { width: 2100px; height: 3536px; padding: 0; border-radius: 0; background: none; box-shadow: none; }
 html.bare .device::after { display: none; }
 html.bare .screen { border-radius: 0; }
+@media (pointer: coarse) {
+  .scrim, .still { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+  .scrim { background: rgba(15, 23, 42, .32); }
+  .still { background: rgba(15, 23, 42, .45); }
+}
 
 /* reduced motion: keep state changes, drop travel */
 .screen { touch-action: manipulation; -webkit-touch-callout: none; }
