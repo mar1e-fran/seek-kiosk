@@ -62,6 +62,7 @@ html.embed, html.embed body { background: transparent; }
 
 *, *::before, *::after { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body {
   background: radial-gradient(120% 80% at 50% 0%, var(--page-glow), var(--page) 70%);
   background-color: var(--page);
@@ -86,6 +87,7 @@ button:focus-visible, [role="button"]:focus-visible { outline: 6px solid var(--s
 }
 .fit { position: relative; width: 100%; height: 100%; display: grid; place-items: center; min-height: 0; }
 .device-slot { position: relative; }
+/*@kiosk*/
 .device {
   position: absolute; left: 0; top: 0;
   width: 2260px; height: 3696px;
@@ -103,6 +105,7 @@ button:focus-visible, [role="button"]:focus-visible { outline: 6px solid var(--s
   background: linear-gradient(115deg, rgba(255,255,255,.07), rgba(255,255,255,0) 38%);
 }
 
+/*@end-kiosk*/
 .caption {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center;
   font-size: 14px; line-height: 1.3; color: var(--muted);
@@ -135,6 +138,7 @@ html.embed .caption .restart:hover { background: none; text-decoration-color: tr
 html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; outline-offset: 4px; }
 @keyframes ping { 0% { box-shadow: 0 0 0 0 rgba(254,138,1,.55); } 80%, 100% { box-shadow: 0 0 0 8px rgba(254,138,1,0); } }
 
+/*@kiosk*/
 /* ── The kiosk screen: 2100 × 3536 design units ───────────────────────── */
 .screen {
   position: relative;
@@ -150,7 +154,6 @@ html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; ou
 .screen.instant, .screen.instant * { transition: none !important; }
 
 .abs { position: absolute; }
-.lh { line-height: 1.32; }
 
 /* Logo */
 .logo {
@@ -540,14 +543,7 @@ html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; ou
   .caption .hint::before { animation: none; }
   .pin.enter { animation: none; }
   .screen.sheet-open .ev { animation: none; }
-  /* Events of the Day: slide with `top` and fade with colour instead of transform/opacity.
-     Those make phones build full-size 2100×3088 / 2100×3536 layers (hundreds of MB at 3×),
-     which crashed mobile Safari on open; this way only the small on-screen picture repaints. */
-  .scrim { opacity: 1; backdrop-filter: none; -webkit-backdrop-filter: none; background: rgba(15, 23, 42, 0); transition: background-color .4s ease; }
-  .screen.sheet-open .scrim { background: rgba(15, 23, 42, .32); }
-  .sheet { transform: none; top: calc(3208px + var(--drag, 0px)); transition: top .55s var(--ease-sheet); }
-  .screen.sheet-open .sheet { transform: none; top: calc(448px + var(--drag, 0px)); }
-  .sheet .bg { box-shadow: none; }
+  .scrim { backdrop-filter: none; -webkit-backdrop-filter: none; background: rgba(15, 23, 42, .32); }
 }
 
 /* reduced motion: keep state changes, drop travel */
@@ -564,6 +560,7 @@ html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; ou
   .screen *, .screen *::before { animation: none !important; transition-duration: 1ms !important; transition-delay: 0ms !important; }
   .caption .hint::before { animation: none; }
 }
+/*@end-kiosk*/
 </style>
 </head>
 <body>
@@ -690,7 +687,10 @@ html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; ou
 <script>/*__QR__*/</script>
 <script>
 (() => {
-  const W = 2260, H = 3696;
+  // Design values are Figma px (2100 × 3536). The build renders the kiosk at K × that size so phones
+  // never hold full-size layers in memory; every px written from script goes through K too.
+  const K = /*__K__*/1;
+  const W = 2260 * K, H = 3696 * K;
   const screen = document.getElementById('screen');
   const $ = (s, r = screen) => r.querySelector(s);
   const $$ = (s, r = screen) => [...r.querySelectorAll(s)];
@@ -730,7 +730,7 @@ html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; ou
       let [x, y] = e.mini || (() => { const [tx, ty] = toIso(level, e.plan[0] + 108.2, e.plan[1] + 224); return [tx - 90.2, ty - 185]; })();
       const el = document.createElement('div');
       el.className = 'mini-pin';
-      el.style.cssText = `left:${x}px;top:${y}px;--pd:${650 + i * 70 + (3 - level) * 90}ms`;
+      el.style.cssText = `left:${x * K}px;top:${y * K}px;--pd:${650 + i * 70 + (3 - level) * 90}ms`;
       el.innerHTML = `<img src="assets/pin-small.svg" alt=""><span>${e.emoji}</span>`;
       el.setAttribute('role', 'button');
       el.setAttribute('aria-label', e.title);
@@ -764,7 +764,7 @@ html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; ou
   const BUBBLE = { left: 'assets/card-left.svg', right: 'assets/card-right.svg' };
   function cardHTML(id) {
     const e = EVENTS[id], side = e.plan[0] < 700 ? 'right' : 'left';
-    return `<div class="card ${side}" data-card="${id}" style="left:${e.plan[0]}px;top:${e.plan[1]}px">
+    return `<div class="card ${side}" data-card="${id}" style="left:${e.plan[0] * K}px;top:${e.plan[1] * K}px">
       <img class="bubble" src="${BUBBLE[side]}" alt="">
       <div class="body">
         <div class="title-row"><span class="em">${e.emoji}</span><h3>${e.title}</h3><button class="x" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="#0f172a" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
@@ -774,7 +774,7 @@ html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; ou
             <p class="desc">${e.desc}</p>
             <div class="tiles">
               <div class="tile"><div class="label"><img src="assets/icon-calendar.svg" alt="">Time</div><div class="value">Feb 22, ${e.time}</div></div>
-              <div class="tile"><div class="label"><img src="assets/icon-location.svg" alt="">Location</div><div class="value lg" style="${e.placeSize ? `font-size:${e.placeSize}px` : ''}">${e.place}</div></div>
+              <div class="tile"><div class="label"><img src="assets/icon-location.svg" alt="">Location</div><div class="value lg" style="${e.placeSize ? `font-size:${e.placeSize * K}px` : ''}">${e.place}</div></div>
             </div>
             <button class="join">Join</button>
           </div>
@@ -790,12 +790,12 @@ html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; ou
     const ids = Object.keys(EVENTS).filter(id => EVENTS[id].floor === floor);
     pinsHost.innerHTML = ids.map((id, i) => {
       const e = EVENTS[id];
-      return `<div class="pin enter" data-pin="${id}" role="button" tabindex="0" aria-label="${e.title}" style="left:${e.plan[0]}px;top:${e.plan[1]}px;--pd:${i * 80}ms"><img src="assets/pin-large.svg" alt=""><span>${e.emoji}</span></div>`;
+      return `<div class="pin enter" data-pin="${id}" role="button" tabindex="0" aria-label="${e.title}" style="left:${e.plan[0] * K}px;top:${e.plan[1] * K}px;--pd:${i * 80}ms"><img src="assets/pin-large.svg" alt=""><span>${e.emoji}</span></div>`;
     }).join('') + ids.map(cardHTML).join('');
     // one-line titles: step the size down until it fits the bubble
     $$('.card h3', pinsHost).forEach(h => {
       let size = 100;
-      while (h.scrollWidth > h.clientWidth && size > 60) h.style.fontSize = (size -= 4) + 'px';
+      while (h.scrollWidth > h.clientWidth && size > 60) h.style.fontSize = (size -= 4) * K + 'px';
     });
   }
   pinsHost.addEventListener('click', ev => {
@@ -900,7 +900,7 @@ html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; ou
     if (floor === state.floor) { if (eventId) showCard(eventId); return; }
     const content = $('#planContent');
     const dir = floor > state.floor ? 1 : -1;
-    content.style.setProperty('--shift', `${dir * 80}px`);
+    content.style.setProperty('--shift', `${dir * 80 * K}px`);
     content.classList.add('leaving');
     setTimeout(() => {
       state.floor = floor;
@@ -909,7 +909,7 @@ html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; ou
       void screen.offsetWidth;
       screen.classList.remove('instant');
       renderPlan(floor);
-      content.style.setProperty('--shift', `${-dir * 80}px`);
+      content.style.setProperty('--shift', `${-dir * 80 * K}px`);
       void content.offsetWidth;
       content.classList.remove('leaving');
       if (eventId) setTimeout(() => showCard(eventId), 650);
@@ -941,7 +941,7 @@ html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; ou
     drag.dy = (e.clientY - drag.y) / k;
     if (!drag.moved && Math.abs(drag.dy) > 12) { drag.moved = true; sheet.classList.add('dragging'); }
     if (!drag.moved) return;
-    const min = state.sheet ? 0 : -2760, max = state.sheet ? 2760 : 0;
+    const min = state.sheet ? 0 : -2760 * K, max = state.sheet ? 2760 * K : 0;
     let d = Math.max(min, Math.min(max, drag.dy));
     if (drag.dy > max) d = max + (drag.dy - max) * .2;           // rubber band
     if (drag.dy < min) d = min + (drag.dy - min) * .2;
@@ -955,8 +955,8 @@ html.embed .caption .restart:focus-visible { outline: 1px solid currentColor; ou
     if (!moved) return;
     sheet.dataset.justDragged = '1'; setTimeout(() => delete sheet.dataset.justDragged, 50);
     const v = dy / Math.max(1, performance.now() - t);              // design px per ms
-    if (!state.sheet && (dy < -500 || v < -1.2)) openSheet();
-    else if (state.sheet && (dy > 500 || v > 1.2)) closeSheet();
+    if (!state.sheet && (dy < -500 * K || v < -1.2 * K)) openSheet();
+    else if (state.sheet && (dy > 500 * K || v > 1.2 * K)) closeSheet();
   });
   $('#peek').addEventListener('click', () => { if (!sheet.dataset.justDragged) state.sheet ? closeSheet() : openSheet(); });
   $('#sheetClose').addEventListener('click', closeSheet);
