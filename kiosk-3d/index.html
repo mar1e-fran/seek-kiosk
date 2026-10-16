@@ -202,9 +202,23 @@ const stage = document.getElementById('stage');
 const cssHost = document.getElementById('css');
 const canvas = document.getElementById('gl');
 
-const LITE = matchMedia('(pointer: coarse)').matches;   // tablets: cheaper GPU settings
-const gl = new THREE.WebGLRenderer({ canvas, antialias: !LITE, alpha: true, powerPreference: LITE ? 'low-power' : 'high-performance' });
-gl.setPixelRatio(Math.min(devicePixelRatio, LITE ? 1.5 : 2));
+// Cheaper GPU settings on tablets, low-spec laptops (<= 4 cores or <= 4 GB) and data saver
+const NET = navigator.connection || {};
+const LITE = matchMedia('(pointer: coarse)').matches
+  || (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4)
+  || (navigator.deviceMemory && navigator.deviceMemory <= 4)
+  || !!NET.saveData;
+let gl;
+try {
+  gl = new THREE.WebGLRenderer({ canvas, antialias: !LITE, alpha: true, powerPreference: LITE ? 'low-power' : 'high-performance' });
+} catch (err) {
+  // No WebGL (old GPU, blocked drivers, locked-down machines): fall back to the flat kiosk
+  const q = new URLSearchParams(location.search);
+  location.replace('../' + (q.toString() ? '?' + q : ''));
+  throw err;
+}
+let pixelRatio = Math.min(devicePixelRatio, LITE ? 1 : 2);
+gl.setPixelRatio(pixelRatio);
 gl.setClearColor(0x000000, 0);
 gl.outputColorSpace = THREE.SRGBColorSpace;
 gl.toneMapping = THREE.ACESFilmicToneMapping;
@@ -562,7 +576,32 @@ function loop(now) {
   if (!(mode === 'zoomed' && !flight && !dirty)) gl.render(scene, camera);
   dirty = false;
   if (!flat) css.render(cssScene, camera);
-  requestAnimationFrame(loop);
+  watchFrameRate(dt);
+  if (active) requestAnimationFrame(loop); else running = false;
+}
+
+/* ── Only draw while visible: paused when scrolled out of view or the tab is hidden ── */
+let active = true, running = true, onScreen = true;
+function setActive() {
+  const next = onScreen && document.visibilityState === 'visible';
+  if (next && !active && !running) { active = true; running = true; prev = performance.now(); requestAnimationFrame(loop); }
+  active = next;
+}
+document.addEventListener('visibilitychange', setActive);
+if ('IntersectionObserver' in window) {
+  // inside an iframe this measures against the host page's viewport
+  new IntersectionObserver(es => { onScreen = es[0].isIntersecting; setActive(); }).observe(document.documentElement);
+}
+
+/* ── Slow GPU: if frames stay slow, drop the render resolution (once or twice) ── */
+let slowFrames = 0, sampled = 0;
+function watchFrameRate(dt) {
+  if (pixelRatio <= 0.75 || dt <= 0) return;
+  sampled++; if (dt > 1 / 28) slowFrames++;
+  if (sampled >= 90) {
+    if (slowFrames > 45) { pixelRatio = pixelRatio > 1 ? 1 : 0.75; gl.setPixelRatio(pixelRatio); dirty = true; }
+    sampled = slowFrames = 0;
+  }
 }
 
 /* ── Intro: start wide, settle in ── */
